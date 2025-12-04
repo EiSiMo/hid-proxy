@@ -76,4 +76,4 @@ Check the `scripts/` folder for more complex examples.
 
 ## 📄 License
 
-[Insert your License here, e.g., MIT]
+This project is licensed under the MIT License - see the [LICENSE](LICENSE) file for details.
