@@ -73,6 +73,7 @@ Check the `scripts/` folder for more complex examples.
   - [ ] Extend hardware support
   - [ ] Pre-built binaries
   - [ ] Advanced filtering
+  - [ ] Support multible devices at once (and compound scripts)
 
 ## 📄 License
 
