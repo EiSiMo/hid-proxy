@@ -5,21 +5,12 @@ mod proxy;
 mod scripting;
 
 use clap::Parser;
-use std::thread;
 use std::time::Duration;
 
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
-    // parse commandline arguments
     let args = cli::Args::parse();
 
-    // check if user just wants to list devices
-    if args.list {
-        device::list_hid_devices();
-        return Ok(());
-    }
-
-    // cleanup in case CTRL C is pressed
     tokio::spawn(async move {
         tokio::signal::ctrl_c().await.unwrap();
         println!("[!] Ctrl+C detected. Sending release signal to host...");
@@ -27,14 +18,12 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         std::process::exit(0);
     });
 
-
     if let Some(ref name) = args.script {
         println!("[*] Mode: Active Interception using 'scripts/{}.rhai'", name);
     } else {
         println!("[*] Mode: Passthrough (No script selected)");
     }
 
-    // end the program if it has no root privileges
     if unsafe { libc::geteuid() } != 0 {
         println!("[!] this tool requires root privileges to configure USB gadgets");
         return Ok(())
@@ -45,47 +34,30 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     loop {
         println!("[*] scanning for devices");
 
-        // pass optional VID/PID from CLI to the scanner
-        let mut target = device::scan_and_select_device(args.vid, args.pid);
-
-        // waiting for the user to plug in a suitable hid device
-        if target.is_none() {
-            println!("[*] no suitable device found, awaiting hotplug");
-            match device::wait_for_hotplug().await {
-                Ok(t) => target = Some(t),
-                Err(e) => {
-                    println!("[!] error waiting for hotplug: {}", e);
-                    thread::sleep(Duration::from_secs(1));
-                    continue;
-                }
+        // Loop until we find exactly one suitable device
+        let device = loop {
+            let candidates = device::get_connected_devices();
+            if candidates.len() == 1 {
+                break candidates[0].clone();
+            } else if candidates.len() > 1 {
+                println!("[!] found {} devices, please use only 1", candidates.len());
             }
-        }
 
-        let device_info = target.unwrap();
-        println!("[+] target device acquired");
-
-        let descriptor_result = device::fetch_descriptor_infos(
-            device_info.bus,
-            device_info.addr,
-            device_info.report_len
-        );
-
-        let (vid, pid, raw_descriptor, protocol, subclass, interface_num) = match descriptor_result {
-            Ok(res) => res,
-            Err(e) => {
-                println!("[!] failed to fetch descriptor: {}", e);
-                tokio::time::sleep(Duration::from_secs(1)).await;
-                continue;
-            }
+            println!("[*] awaiting hotplug");
+            device::block_till_hotplug().await;
+            tokio::time::sleep(Duration::from_millis(500)).await;
         };
 
+        println!("[+] target device acquired: VID: {:04x} PID: {:04x}", device.vid, device.pid);
+
+        // No need to fetch descriptors separately anymore, they are in the struct
         if let Err(e) = gadget::create_gadget(
-            vid,
-            pid,
-            &raw_descriptor,
-            protocol,
-            subclass,
-            device_info.report_len,
+            device.vid,
+            device.pid,
+            &device.report_descriptor,
+            device.protocol,
+            device.subclass,
+            device.report_len,
         ) {
             println!("[!] failed to create USB gadget: {}", e);
             tokio::time::sleep(Duration::from_secs(5)).await;
@@ -98,20 +70,20 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
         let script_name_clone = args.script.clone();
 
+        // Proxy loop signature matches what we have in proxy.rs, just passing fields from device
         let _ = tokio::task::spawn_blocking(move || {
             if let Err(e) = proxy::proxy_loop(
-                device_info.bus,
-                device_info.addr,
-                device_info.ep_in,
-                device_info.ep_out,
-                interface_num,
-                device_info.report_len,
+                device.bus,
+                device.addr,
+                device.ep_in,
+                device.ep_out,
+                device.interface_num,
+                device.report_len,
                 script_name_clone,
             ) {
                 println!("[!] proxy loop ended: {}", e);
             }
-        })
-            .await;
+        }).await;
 
         println!("[!] device removed or host disconnected");
         println!("[*] cleaning up");

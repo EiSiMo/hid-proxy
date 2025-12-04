@@ -9,21 +9,20 @@ pub fn wait_for_host_connection() {
     let udc_name = find_udc_controller().unwrap();
     let state_path = format!("/sys/class/udc/{}/state", udc_name);
 
-    if let Ok(state) = fs::read_to_string(&state_path) {
-        if state.trim() == "configured" {
-            return;
-        }
-    }
-
-    println!("[*] Waiting for USB connection to Host PC (Please plug in the Pi)...");
-
+    let mut plug_host_warning_sent = false;
     loop {
         if let Ok(state) = fs::read_to_string(&state_path) {
             if state.trim() == "configured" {
-                println!("[+] Host PC Connected (Configured).");
+                println!("[+] host computer connected");
                 break;
+            } else {
+                if !plug_host_warning_sent {
+                    println!("[!] awaiting connection to host computer");
+                    plug_host_warning_sent = true;
+                }
             }
         }
+
         thread::sleep(Duration::from_millis(500));
     }
 }
@@ -41,7 +40,7 @@ pub fn create_gadget(
 
     let _ = teardown_gadget(&base_path);
 
-    println!("[*] Configuring GadgetFS...");
+    println!("[*] configuring GadgetFS");
     fs::create_dir_all(&base_path)?;
     write_file(&base_path, "idVendor", &format!("0x{:04x}", vid))?;
     write_file(&base_path, "idProduct", &format!("0x{:04x}", pid))?;
@@ -76,7 +75,7 @@ pub fn create_gadget(
     let udc_name = find_udc_controller()?;
     write_file(&base_path, "UDC", &udc_name)?;
 
-    println!("[SUCCESS] Gadget created and bound to UDC: {}", udc_name);
+    println!("[*] gadget created and bound to UDC: {}", udc_name);
     Ok(())
 }
 
@@ -107,7 +106,7 @@ pub fn find_udc_controller() -> Result<String, Box<dyn std::error::Error>> {
             return Ok(name);
         }
     }
-    Err("No UDC Controller found in /sys/class/udc".into())
+    Err("[-] no UDC controller found in /sys/class/udc".into())
 }
 
 // Emergency cleanup helper exposed for main
@@ -116,9 +115,9 @@ pub fn cleanup_gadget_emergency() {
         let zeros = [0u8; 64];
         let _ = file.write_all(&zeros);
         let _ = file.flush();
-        println!("[!] Key release sent. Exiting now.");
+        println!("[!] key release sent, exiting");
     } else {
-        println!("[!] Could not open gadget for cleanup.");
+        println!("[!] could not open gadget for cleanup");
     }
     let _ = teardown_gadget("/sys/kernel/config/usb_gadget/hid_proxy");
 }

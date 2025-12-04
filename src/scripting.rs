@@ -7,18 +7,18 @@ pub fn load_script_engine(script_name: Option<String>) -> Option<(Engine, AST)> 
         let path = Path::new(&path_str);
 
         if path.exists() {
-            println!("[SCRIPT] Loading {}...", path_str);
+            println!("[*] loading script {}", path_str);
             let engine = Engine::new();
             match engine.compile_file(path_str.into()) {
                 Ok(ast) => {
-                    println!("[SCRIPT] Compiled successfully.");
+                    println!("[*] script compiled successfully.");
                     return Some((engine, ast));
                 }
-                Err(e) => println!("[SCRIPT] Compilation error: {}", e),
+                Err(e) => println!("[!] script compilation error: {}", e),
             }
         } else {
             println!(
-                "[SCRIPT] Warning: File '{}' not found. Running without script.",
+                "[!] script file {} not found, running without script",
                 path_str
             );
         }

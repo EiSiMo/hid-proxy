@@ -21,9 +21,9 @@ pub fn proxy_loop(
     let device = devices
         .iter()
         .find(|d| d.bus_number() == bus && d.address() == addr)
-        .ok_or("Target device vanished before proxy loop")?;
+        .ok_or("[-] target device vanished before proxy loop")?;
 
-    println!("[PROXY] Opening device...");
+    println!("[*] proxy loop opening device...");
     let handle = device.open()?;
 
     if handle.kernel_driver_active(interface_num).unwrap_or(false) {
@@ -42,12 +42,12 @@ pub fn proxy_loop(
     let mut gadget_write = OpenOptions::new()
         .write(true)
         .open(gadget_path)
-        .map_err(|e| format!("Failed to open {} for writing: {}", gadget_path, e))?;
+        .map_err(|e| format!("[-] failed to open {} for writing {}", gadget_path, e))?;
 
     let mut gadget_read = File::open(gadget_path)
-        .map_err(|e| format!("Failed to open {} for reading: {}", gadget_path, e))?;
+        .map_err(|e| format!("[-] failed to open {} for reading {}", gadget_path, e))?;
 
-    println!("[PROXY] Bidirectional Tunnel established.");
+    println!("[*] bidirectional tunnel established");
 
     // --- THREAD 2: Host -> Device (LEDs, Output) ---
     thread::spawn(move || {
@@ -80,7 +80,7 @@ pub fn proxy_loop(
                     };
 
                     if let Err(e) = result {
-                        eprintln!("Error sending LED/Output to device: {}", e);
+                        eprintln!("[-] error sending output to device: {}", e);
                         break;
                     }
                 }
@@ -92,9 +92,6 @@ pub fn proxy_loop(
         }
     });
 
-    // --- MAIN THREAD: Device -> Host (Input) ---
-
-    // Read buffer remains 64 bytes to swallow the Scanner's large packets
     let mut buf = vec![0u8; 64];
 
     loop {
@@ -104,19 +101,13 @@ pub fn proxy_loop(
                     let data = &buf[..size];
                     let mut processed_data = process_payload(&script_context, "IN", data);
 
-                    // FIX: Pad data with zeros if it is smaller than report_len.
-                    // The gadget driver expects exactly report_len bytes (wMaxPacketSize).
-                    // If we write fewer bytes (e.g. 7 bytes for mouse, but EP is 8 bytes),
-                    // the driver buffers it and waits, causing a freeze.
                     if processed_data.len() < report_len as usize {
                         processed_data.resize(report_len as usize, 0);
                     }
 
-                    // Truncate data to report_len if it somehow exceeds it
                     let len_to_write = std::cmp::min(processed_data.len(), report_len as usize);
                     let final_payload = &processed_data[..len_to_write];
 
-                    // Retry loop (EAGAIN handling)
                     let mut written = false;
                     while !written {
                         match gadget_write.write_all(final_payload) {
@@ -130,10 +121,10 @@ pub fn proxy_loop(
                                         continue;
                                     }
                                     if os_err == 108 { // ESHUTDOWN
-                                        println!("\n[!] Connection to Host PC lost!");
+                                        println!("\n[!] connection to host computer lost");
                                     }
                                 }
-                                return Err(format!("Write to gadget failed: {}", e).into());
+                                return Err(format!("[!] writing to gadget failed: {}", e).into());
                             }
                         }
                     }
@@ -143,7 +134,7 @@ pub fn proxy_loop(
                 continue;
             }
             Err(e) => {
-                return Err(format!("Read from USB failed: {}", e).into());
+                return Err(format!("[!] read from USB failed: {}", e).into());
             }
         }
     }
