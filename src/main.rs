@@ -13,15 +13,15 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     tokio::spawn(async move {
         tokio::signal::ctrl_c().await.unwrap();
-        println!("[!] Ctrl+C detected. Sending release signal to host...");
+        println!("[!] Ctrl+C detected, sending release signal to host");
         gadget::cleanup_gadget_emergency();
         std::process::exit(0);
     });
 
     if let Some(ref name) = args.script {
-        println!("[*] Mode: Active Interception using 'scripts/{}.rhai'", name);
+        println!("[*] active interception using 'scripts/{}.rhai'", name);
     } else {
-        println!("[*] Mode: Passthrough (No script selected)");
+        println!("[*] no active script");
     }
 
     if unsafe { libc::geteuid() } != 0 {
@@ -48,12 +48,11 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             tokio::time::sleep(Duration::from_millis(500)).await;
         };
 
-        println!("[+] target device acquired: VID: {:04x} PID: {:04x}", device.vid, device.pid);
+        println!("{}", device);
 
-        // Pass all cloned fields to gadget creation
         if let Err(e) = gadget::create_gadget(
-            device.vid,
-            device.pid,
+            device.vendor_id,
+            device.product_id,
             &device.report_descriptor,
             device.protocol,
             device.subclass,
@@ -78,11 +77,12 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         let script_name_clone = args.script.clone();
 
         let _ = tokio::task::spawn_blocking(move || {
+            // Updated field names (bus, address, endpoint_in, endpoint_out)
             if let Err(e) = proxy::proxy_loop(
                 device.bus,
-                device.addr,
-                device.ep_in,
-                device.ep_out,
+                device.address,
+                device.endpoint_in,
+                device.endpoint_out,
                 device.interface_num,
                 device.report_len,
                 script_name_clone,

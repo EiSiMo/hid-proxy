@@ -1,28 +1,61 @@
 use rusb::{Context, Direction, TransferType, UsbContext, Recipient, RequestType};
 use std::time::Duration;
+use std::fmt;
 use tokio::io::unix::AsyncFd;
 use udev::{EventType, MonitorBuilder};
 
 #[derive(Debug, Clone)]
 pub struct HIDevice {
-    pub bus: u8,
-    pub addr: u8,
-    pub vid: u16,
-    pub pid: u16,
-    pub report_len: u16,
-    pub ep_in: u8,
-    pub ep_out: Option<u8>,
-    pub interface_num: u8,
-    pub protocol: u8,
-    pub subclass: u8,
-    pub report_descriptor: Vec<u8>,
-    pub bcd_usb: u16,
-    pub bcd_device: u16,
+    // --- Identification ---
+    pub vendor_id: u16,
+    pub product_id: u16,
     pub manufacturer: Option<String>,
     pub product: Option<String>,
     pub serial_number: Option<String>,
     pub configuration: Option<String>,
+
+    // --- Versioning ---
+    pub bcd_usb: u16,
+    pub bcd_device: u16,
+
+    // --- Topology ---
+    pub bus: u8,
+    pub address: u8,
+
+    // --- Interface / HID Details ---
+    pub interface_num: u8,
+    pub protocol: u8,
+    pub subclass: u8,
     pub max_power: u16,
+    pub report_len: u16,
+
+    // --- Endpoints & Data ---
+    pub endpoint_in: u8,
+    pub endpoint_out: Option<u8>,
+    pub report_descriptor: Vec<u8>,
+}
+
+impl fmt::Display for HIDevice {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        writeln!(f, "=== HID Device Info [Bus {:03} Address {:03}] ===", self.bus, self.address)?;
+        writeln!(f, "ID:             {:04x}:{:04x}", self.vendor_id, self.product_id)?;
+        writeln!(f, "Manufacturer:   {}", self.manufacturer.as_deref().unwrap_or("N/A"))?;
+        writeln!(f, "Product:        {}", self.product.as_deref().unwrap_or("N/A"))?;
+        writeln!(f, "Serial:         {}", self.serial_number.as_deref().unwrap_or("N/A"))?;
+        writeln!(f, "Config:         {}", self.configuration.as_deref().unwrap_or("N/A"))?;
+        writeln!(f, "---------------------------------------------")?;
+        writeln!(f, "USB Version:    {:x}.{:02x}", self.bcd_usb >> 8, self.bcd_usb & 0xFF)?;
+        writeln!(f, "Device Version: {:x}.{:02x}", self.bcd_device >> 8, self.bcd_device & 0xFF)?;
+        writeln!(f, "Max Power:      {} mA", self.max_power)?;
+        writeln!(f, "---------------------------------------------")?;
+        writeln!(f, "Interface:      {}", self.interface_num)?;
+        writeln!(f, "Protocol:       {}", self.protocol)?;
+        writeln!(f, "Subclass:       {}", self.subclass)?;
+        writeln!(f, "Report Len:     {}", self.report_len)?;
+        writeln!(f, "Endpoint IN:    0x{:02x}", self.endpoint_in)?;
+        writeln!(f, "Endpoint OUT:   {}", self.endpoint_out.map(|e| format!("0x{:02x}", e)).unwrap_or_else(|| "None".to_string()))?;
+        writeln!(f, "=============================================")
+    }
 }
 
 pub fn get_connected_devices() -> Vec<HIDevice> {
@@ -102,24 +135,33 @@ pub fn get_connected_devices() -> Vec<HIDevice> {
                                 let bcd_device = ((dev_ver.major() as u16) << 8) | ((dev_ver.minor() as u16) << 4) | (dev_ver.sub_minor() as u16);
 
                                 candidates.push(HIDevice {
-                                    bus: device.bus_number(),
-                                    addr: device.address(),
-                                    vid: device_desc.vendor_id(),
-                                    pid: device_desc.product_id(),
-                                    report_len,
-                                    ep_in: in_addr,
-                                    ep_out,
-                                    interface_num,
-                                    protocol: interface_desc.protocol_code(),
-                                    subclass: interface_desc.sub_class_code(),
-                                    report_descriptor: buf,
-                                    bcd_usb,
-                                    bcd_device,
+                                    // Identity
+                                    vendor_id: device_desc.vendor_id(),
+                                    product_id: device_desc.product_id(),
                                     manufacturer,
                                     product,
                                     serial_number,
                                     configuration,
-                                    max_power: (config_desc.max_power()) * 2, // Convert 2mA units to mA
+
+                                    // Versioning
+                                    bcd_usb,
+                                    bcd_device,
+
+                                    // Topology
+                                    bus: device.bus_number(),
+                                    address: device.address(),
+
+                                    // HID / Interface
+                                    interface_num,
+                                    protocol: interface_desc.protocol_code(),
+                                    subclass: interface_desc.sub_class_code(),
+                                    max_power: (config_desc.max_power()) * 2,
+                                    report_len,
+
+                                    // Endpoints & Data
+                                    endpoint_in: in_addr,
+                                    endpoint_out: ep_out,
+                                    report_descriptor: buf,
                                 });
                             }
                         }
@@ -140,7 +182,7 @@ pub async fn block_till_hotplug() {
 
     loop {
         let mut guard = async_monitor.readable().await.unwrap();
-        guard.try_io(|socket_ref| {
+        let _ = guard.try_io(|socket_ref| {
             for event in socket_ref.get_ref().iter() {
                 if event.event_type() == EventType::Add || event.event_type() == EventType::Remove {
                     return Ok(());
