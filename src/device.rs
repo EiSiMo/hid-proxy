@@ -16,6 +16,13 @@ pub struct HIDevice {
     pub protocol: u8,
     pub subclass: u8,
     pub report_descriptor: Vec<u8>,
+    pub bcd_usb: u16,
+    pub bcd_device: u16,
+    pub manufacturer: Option<String>,
+    pub product: Option<String>,
+    pub serial_number: Option<String>,
+    pub configuration: Option<String>,
+    pub max_power: u16,
 }
 
 pub fn get_connected_devices() -> Vec<HIDevice> {
@@ -70,6 +77,30 @@ pub fn get_connected_devices() -> Vec<HIDevice> {
                             if len > 0 {
                                 buf.truncate(len);
 
+                                // Fetch Strings
+                                let manufacturer = if device_desc.manufacturer_string_index().unwrap_or(0) > 0 {
+                                    handle.read_string_descriptor_ascii(device_desc.manufacturer_string_index().unwrap_or(0)).ok()
+                                } else { None };
+
+                                let product = if device_desc.product_string_index().unwrap_or(0) > 0 {
+                                    handle.read_string_descriptor_ascii(device_desc.product_string_index().unwrap_or(0)).ok()
+                                } else { None };
+
+                                let serial_number = if device_desc.serial_number_string_index().unwrap_or(0) > 0 {
+                                    handle.read_string_descriptor_ascii(device_desc.serial_number_string_index().unwrap_or(0)).ok()
+                                } else { None };
+
+                                let configuration = if config_desc.description_string_index().unwrap_or(0) > 0 {
+                                    handle.read_string_descriptor_ascii(config_desc.description_string_index().unwrap_or(0)).ok()
+                                } else { None };
+
+                                // Convert Version structs to u16 BCD (Major << 8 | Minor << 4 | Sub)
+                                let usb_ver = device_desc.usb_version();
+                                let bcd_usb = ((usb_ver.major() as u16) << 8) | ((usb_ver.minor() as u16) << 4) | (usb_ver.sub_minor() as u16);
+
+                                let dev_ver = device_desc.device_version();
+                                let bcd_device = ((dev_ver.major() as u16) << 8) | ((dev_ver.minor() as u16) << 4) | (dev_ver.sub_minor() as u16);
+
                                 candidates.push(HIDevice {
                                     bus: device.bus_number(),
                                     addr: device.address(),
@@ -82,6 +113,13 @@ pub fn get_connected_devices() -> Vec<HIDevice> {
                                     protocol: interface_desc.protocol_code(),
                                     subclass: interface_desc.sub_class_code(),
                                     report_descriptor: buf,
+                                    bcd_usb,
+                                    bcd_device,
+                                    manufacturer,
+                                    product,
+                                    serial_number,
+                                    configuration,
+                                    max_power: (config_desc.max_power()) * 2, // Convert 2mA units to mA
                                 });
                             }
                         }

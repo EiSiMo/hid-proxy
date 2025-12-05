@@ -50,7 +50,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
         println!("[+] target device acquired: VID: {:04x} PID: {:04x}", device.vid, device.pid);
 
-        // No need to fetch descriptors separately anymore, they are in the struct
+        // Pass all cloned fields to gadget creation
         if let Err(e) = gadget::create_gadget(
             device.vid,
             device.pid,
@@ -58,6 +58,13 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             device.protocol,
             device.subclass,
             device.report_len,
+            device.bcd_device,
+            device.bcd_usb,
+            device.serial_number.clone(),
+            device.manufacturer.clone(),
+            device.product.clone(),
+            device.configuration.clone(),
+            device.max_power,
         ) {
             println!("[!] failed to create USB gadget: {}", e);
             tokio::time::sleep(Duration::from_secs(5)).await;
@@ -70,7 +77,6 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
         let script_name_clone = args.script.clone();
 
-        // Proxy loop signature matches what we have in proxy.rs, just passing fields from device
         let _ = tokio::task::spawn_blocking(move || {
             if let Err(e) = proxy::proxy_loop(
                 device.bus,

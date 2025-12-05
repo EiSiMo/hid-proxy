@@ -34,6 +34,13 @@ pub fn create_gadget(
     protocol: u8,
     subclass: u8,
     report_len: u16,
+    bcd_device: u16,
+    bcd_usb: u16,
+    serial: Option<String>,
+    manufacturer: Option<String>,
+    product: Option<String>,
+    config_name: Option<String>,
+    max_power: u16,
 ) -> Result<(), Box<dyn std::error::Error>> {
     let gadget_name = "hid_proxy";
     let base_path = format!("/sys/kernel/config/usb_gadget/{}", gadget_name);
@@ -44,21 +51,21 @@ pub fn create_gadget(
     fs::create_dir_all(&base_path)?;
     write_file(&base_path, "idVendor", &format!("0x{:04x}", vid))?;
     write_file(&base_path, "idProduct", &format!("0x{:04x}", pid))?;
-    write_file(&base_path, "bcdDevice", "0x0100")?;
-    write_file(&base_path, "bcdUSB", "0x0200")?;
+    write_file(&base_path, "bcdDevice", &format!("0x{:04x}", bcd_device))?;
+    write_file(&base_path, "bcdUSB", &format!("0x{:04x}", bcd_usb))?;
 
     let strings_path = format!("{}/strings/0x409", base_path);
     fs::create_dir_all(&strings_path)?;
-    write_file(&strings_path, "serialnumber", "1337-PROXY")?;
-    write_file(&strings_path, "manufacturer", "Rust Proxy")?;
-    write_file(&strings_path, "product", "Cloned Device")?;
+    write_file(&strings_path, "serialnumber", &serial.unwrap_or("1337-PROXY".to_string()))?;
+    write_file(&strings_path, "manufacturer", &manufacturer.unwrap_or("Rust Proxy".to_string()))?;
+    write_file(&strings_path, "product", &product.unwrap_or("Cloned Device".to_string()))?;
 
     let config_path = format!("{}/configs/c.1", base_path);
     fs::create_dir_all(&config_path)?;
     let config_strings = format!("{}/strings/0x409", config_path);
     fs::create_dir_all(&config_strings)?;
-    write_file(&config_strings, "configuration", "Config 1")?;
-    write_file(&config_path, "MaxPower", "500")?;
+    write_file(&config_strings, "configuration", &config_name.unwrap_or("Config 1".to_string()))?;
+    write_file(&config_path, "MaxPower", &max_power.to_string())?;
 
     let func_path = format!("{}/functions/hid.usb0", base_path);
     fs::create_dir_all(&func_path)?;
