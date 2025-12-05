@@ -33,6 +33,10 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         println!("[*] no active script");
     }
 
+    if let Some(ref target) = args.target {
+        println!("[*] auto-targeting device matching '{}'", target);
+    }
+
     if unsafe { libc::geteuid() } != 0 {
         println!("[!] this tool requires root privileges to configure USB gadgets");
         // Restore echo if we exit early
@@ -56,11 +60,32 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                 continue;
             }
 
+            // Logic 1: Check for explicit CLI target (pre-selection)
+            if let Some(ref target_str) = args.target {
+                let target_lower = target_str.to_lowercase();
+
+                let found = candidates.iter().find(|d| {
+                    let id_str = format!("{:04x}:{:04x}", d.vendor_id, d.product_id);
+                    let id_iface_str = format!("{:04x}:{:04x}:{}", d.vendor_id, d.product_id, d.interface_num);
+
+                    id_str == target_lower || id_iface_str == target_lower
+                });
+
+                if let Some(d) = found {
+                    break d.clone();
+                } else {
+                    println!("[*] waiting for target device '{}'...", target_str);
+                    tokio::time::sleep(Duration::from_millis(1000)).await;
+                    continue;
+                }
+            }
+
+            // Logic 2: Auto-select if only one candidate exists
             if candidates.len() == 1 {
                 break candidates[0].clone();
             }
 
-            // Interactive Selection via helper function
+            // Logic 3: Interactive Selection via helper function
             if let Some(selected) = select_device_interactive(&candidates) {
                 break selected;
             }
@@ -101,12 +126,13 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 fn select_device_interactive(candidates: &[HIDevice]) -> Option<HIDevice> {
     println!("[!] found {} devices/interfaces. Please select one:", candidates.len());
 
-    // Fixed widths: IDX(5) | BUS:ADDR(10) | IFACE(8) | PROTO(16) | PRODUCT(Auto)
+    // Fixed widths: IDX(5) | ID(13) | BUS:ADDR(10) | IFACE(8) | PROTO(16) | PRODUCT(Auto)
+    // ID column widened to 13 chars to fit "VID:PID:IF" comfortably
     println!(
-        "{:<5} | {:<10} | {:<8} | {:<16} | {}",
-        "IDX", "BUS:ADDR", "IFACE", "PROTO", "PRODUCT"
+        "{:<5} | {:<13} | {:<10} | {:<8} | {:<16} | {}",
+        "IDX", "ID", "BUS:ADDR", "IFACE", "PROTO", "PRODUCT"
     );
-    println!("{:-<5}-+-{:-<10}-+-{:-<8}-+-{:-<16}-+-{:-<20}", "", "", "", "", "");
+    println!("{:-<5}-+-{:-<13}-+-{:-<10}-+-{:-<8}-+-{:-<16}-+-{:-<20}", "", "", "", "", "", "");
 
     for (index, dev) in candidates.iter().enumerate() {
         let proto_desc = match dev.protocol {
@@ -116,12 +142,15 @@ fn select_device_interactive(candidates: &[HIDevice]) -> Option<HIDevice> {
             _ => "Other"
         };
 
-        // Format the protocol string first to ensure alignment works
         let proto_display = format!("{} ({})", dev.protocol, proto_desc);
 
+        // Always include interface number in ID string: VID:PID:IFACE
+        let id_display = format!("{:04x}:{:04x}:{}", dev.vendor_id, dev.product_id, dev.interface_num);
+
         println!(
-            "{:<5} | {:03}:{:03}    | {:<8} | {:<16} | {}",
+            "{:<5} | {:<13} | {:03}:{:03}    | {:<8} | {:<16} | {}",
             index,
+            id_display,
             dev.bus,
             dev.address,
             dev.interface_num,
