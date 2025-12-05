@@ -37,7 +37,7 @@ pub struct HIDevice {
 
 impl fmt::Display for HIDevice {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        writeln!(f, "=== HID Device Info [Bus {:03} Address {:03}] ===", self.bus, self.address)?;
+        writeln!(f, "\n=== HID Device Info [Bus {:03} Address {:03}] ===", self.bus, self.address)?;
         writeln!(f, "ID:             {:04x}:{:04x}", self.vendor_id, self.product_id)?;
         writeln!(f, "Manufacturer:   {}", self.manufacturer.as_deref().unwrap_or("N/A"))?;
         writeln!(f, "Product:        {}", self.product.as_deref().unwrap_or("N/A"))?;

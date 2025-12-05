@@ -1,3 +1,4 @@
+use crate::device::HIDevice;
 use std::fs::{self};
 use std::io::{self, Write};
 use std::os::unix::fs::symlink;
@@ -27,21 +28,7 @@ pub fn wait_for_host_connection() {
     }
 }
 
-pub fn create_gadget(
-    vid: u16,
-    pid: u16,
-    descriptor: &[u8],
-    protocol: u8,
-    subclass: u8,
-    report_len: u16,
-    bcd_device: u16,
-    bcd_usb: u16,
-    serial: Option<String>,
-    manufacturer: Option<String>,
-    product: Option<String>,
-    config_name: Option<String>,
-    max_power: u16,
-) -> Result<(), Box<dyn std::error::Error>> {
+pub fn create_gadget(device: &HIDevice) -> Result<(), Box<dyn std::error::Error>> {
     let gadget_name = "hid_proxy";
     let base_path = format!("/sys/kernel/config/usb_gadget/{}", gadget_name);
 
@@ -49,30 +36,32 @@ pub fn create_gadget(
 
     println!("[*] configuring GadgetFS");
     fs::create_dir_all(&base_path)?;
-    write_file(&base_path, "idVendor", &format!("0x{:04x}", vid))?;
-    write_file(&base_path, "idProduct", &format!("0x{:04x}", pid))?;
-    write_file(&base_path, "bcdDevice", &format!("0x{:04x}", bcd_device))?;
-    write_file(&base_path, "bcdUSB", &format!("0x{:04x}", bcd_usb))?;
+    write_file(&base_path, "idVendor", &format!("0x{:04x}", device.vendor_id))?;
+    write_file(&base_path, "idProduct", &format!("0x{:04x}", device.product_id))?;
+    write_file(&base_path, "bcdDevice", &format!("0x{:04x}", device.bcd_device))?;
+    write_file(&base_path, "bcdUSB", &format!("0x{:04x}", device.bcd_usb))?;
 
     let strings_path = format!("{}/strings/0x409", base_path);
     fs::create_dir_all(&strings_path)?;
-    write_file(&strings_path, "serialnumber", &serial.unwrap_or("1337-PROXY".to_string()))?;
-    write_file(&strings_path, "manufacturer", &manufacturer.unwrap_or("Rust Proxy".to_string()))?;
-    write_file(&strings_path, "product", &product.unwrap_or("Cloned Device".to_string()))?;
+
+    // Using as_deref() to work with string slices directly from the Option<String>
+    write_file(&strings_path, "serialnumber", device.serial_number.as_deref().unwrap_or("1337-PROXY"))?;
+    write_file(&strings_path, "manufacturer", device.manufacturer.as_deref().unwrap_or("Rust Proxy"))?;
+    write_file(&strings_path, "product", device.product.as_deref().unwrap_or("Cloned Device"))?;
 
     let config_path = format!("{}/configs/c.1", base_path);
     fs::create_dir_all(&config_path)?;
     let config_strings = format!("{}/strings/0x409", config_path);
     fs::create_dir_all(&config_strings)?;
-    write_file(&config_strings, "configuration", &config_name.unwrap_or("Config 1".to_string()))?;
-    write_file(&config_path, "MaxPower", &max_power.to_string())?;
+    write_file(&config_strings, "configuration", device.configuration.as_deref().unwrap_or("Config 1"))?;
+    write_file(&config_path, "MaxPower", &device.max_power.to_string())?;
 
     let func_path = format!("{}/functions/hid.usb0", base_path);
     fs::create_dir_all(&func_path)?;
-    write_file(&func_path, "protocol", &protocol.to_string())?;
-    write_file(&func_path, "subclass", &subclass.to_string())?;
-    write_file(&func_path, "report_length", &report_len.to_string())?;
-    fs::write(format!("{}/report_desc", func_path), descriptor)?;
+    write_file(&func_path, "protocol", &device.protocol.to_string())?;
+    write_file(&func_path, "subclass", &device.subclass.to_string())?;
+    write_file(&func_path, "report_length", &device.report_len.to_string())?;
+    fs::write(format!("{}/report_desc", func_path), &device.report_descriptor)?;
 
     let link_target = format!("{}/hid.usb0", config_path);
     if !Path::new(&link_target).exists() {

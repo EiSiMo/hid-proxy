@@ -50,21 +50,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
         println!("{}", device);
 
-        if let Err(e) = gadget::create_gadget(
-            device.vendor_id,
-            device.product_id,
-            &device.report_descriptor,
-            device.protocol,
-            device.subclass,
-            device.report_len,
-            device.bcd_device,
-            device.bcd_usb,
-            device.serial_number.clone(),
-            device.manufacturer.clone(),
-            device.product.clone(),
-            device.configuration.clone(),
-            device.max_power,
-        ) {
+        if let Err(e) = gadget::create_gadget(&device) {
             println!("[!] failed to create USB gadget: {}", e);
             tokio::time::sleep(Duration::from_secs(5)).await;
             continue;
@@ -77,16 +63,8 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         let script_name_clone = args.script.clone();
 
         let _ = tokio::task::spawn_blocking(move || {
-            // Updated field names (bus, address, endpoint_in, endpoint_out)
-            if let Err(e) = proxy::proxy_loop(
-                device.bus,
-                device.address,
-                device.endpoint_in,
-                device.endpoint_out,
-                device.interface_num,
-                device.report_len,
-                script_name_clone,
-            ) {
+            // Updated to pass struct directly
+            if let Err(e) = proxy::proxy_loop(device, script_name_clone) {
                 println!("[!] proxy loop ended: {}", e);
             }
         }).await;
