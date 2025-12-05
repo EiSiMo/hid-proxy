@@ -111,7 +111,6 @@ pub fn cleanup_gadget_emergency() {
         let zeros = [0u8; 64];
         let _ = file.write_all(&zeros);
         let _ = file.flush();
-        println!("[!] key release sent, exiting");
     } else {
         println!("[!] could not open gadget for cleanup");
     }

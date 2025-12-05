@@ -13,9 +13,16 @@ use std::time::Duration;
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let args = cli::Args::parse();
 
+    // 1. Disable ^C echo on startup
+    toggle_terminal_echo(false);
+
     tokio::spawn(async move {
         tokio::signal::ctrl_c().await.unwrap();
-        println!("[!] Ctrl+C detected, sending release signal to host");
+
+        // 2. Restore ^C echo before exiting & use \r to overwrite visual line
+        toggle_terminal_echo(true);
+        println!("\r[*] CTRL+C detected, cleaning up");
+
         gadget::cleanup_gadget_emergency();
         std::process::exit(0);
     });
@@ -28,6 +35,8 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     if unsafe { libc::geteuid() } != 0 {
         println!("[!] this tool requires root privileges to configure USB gadgets");
+        // Restore echo if we exit early
+        toggle_terminal_echo(true);
         return Ok(())
     }
 
@@ -51,9 +60,12 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                 break candidates[0].clone();
             }
 
+            // Interactive Selection via helper function
             if let Some(selected) = select_device_interactive(&candidates) {
                 break selected;
             }
+
+            // If selection failed or invalid, we loop again (rescan)
             println!("[!] invalid selection, rescanning...");
             tokio::time::sleep(Duration::from_millis(1000)).await;
         };
@@ -87,8 +99,9 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
 /// Helper function to handle CLI user selection for multiple devices
 fn select_device_interactive(candidates: &[HIDevice]) -> Option<HIDevice> {
-    println!("\n[!] found {} devices/interfaces, please select one:", candidates.len());
+    println!("[!] found {} devices/interfaces. Please select one:", candidates.len());
 
+    // Fixed widths: IDX(5) | BUS:ADDR(10) | IFACE(8) | PROTO(16) | PRODUCT(Auto)
     println!(
         "{:<5} | {:<10} | {:<8} | {:<16} | {}",
         "IDX", "BUS:ADDR", "IFACE", "PROTO", "PRODUCT"
@@ -103,6 +116,7 @@ fn select_device_interactive(candidates: &[HIDevice]) -> Option<HIDevice> {
             _ => "Other"
         };
 
+        // Format the protocol string first to ensure alignment works
         let proto_display = format!("{} ({})", dev.protocol, proto_desc);
 
         println!(
@@ -129,4 +143,23 @@ fn select_device_interactive(candidates: &[HIDevice]) -> Option<HIDevice> {
     }
 
     None
+}
+
+/// Disables or Enables the ECHOCTL flag (printing ^C) via libc
+fn toggle_terminal_echo(enable: bool) {
+    let fd = libc::STDIN_FILENO;
+    unsafe {
+        let mut termios: libc::termios = std::mem::zeroed();
+
+        if libc::tcgetattr(fd, &mut termios) == 0 {
+            if enable {
+                termios.c_lflag |= libc::ECHOCTL;
+            } else {
+                termios.c_lflag &= !libc::ECHOCTL;
+            }
+
+            // Apply settings immediately
+            libc::tcsetattr(fd, libc::TCSANOW, &termios);
+        }
+    }
 }
