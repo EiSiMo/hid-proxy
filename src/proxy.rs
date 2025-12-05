@@ -18,7 +18,7 @@ pub fn proxy_loop(
     let device = devices
         .iter()
         .find(|d| d.bus_number() == target_info.bus && d.address() == target_info.address)
-        .ok_or("[-] target device vanished before proxy loop")?;
+        .ok_or("target device vanished before proxy loop")?;
 
     println!("[*] proxy loop opening device...");
     let handle = device.open()?;
