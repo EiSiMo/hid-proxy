@@ -66,7 +66,7 @@ fn bridge_device_to_host(
     target_info: HIDevice,
     script_context: Arc<Option<(Engine, AST)>>,
 ) -> Result<(), Box<dyn std::error::Error>> {
-    let mut buf = vec![0u8; 64];
+    let mut buf = vec![0u8; target_info.report_len as usize];
     let mut chunking_warned = false;
 
     loop {
