@@ -107,7 +107,7 @@ pub fn find_udc_controller() -> Result<String, Box<dyn std::error::Error>> {
 
 // Emergency cleanup helper exposed for main
 pub fn cleanup_gadget_emergency() {
-    if let Ok(mut file) = std::fs::OpenOptions::new().write(true).open("/dev/hidg0") {
+    if let Ok(mut file) = fs::OpenOptions::new().write(true).open("/dev/hidg0") {
         let zeros = [0u8; 64];
         let _ = file.write_all(&zeros);
         let _ = file.flush();
