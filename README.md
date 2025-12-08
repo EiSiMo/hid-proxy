@@ -26,17 +26,44 @@ This tool is specifically tested on **Raspberry Pi 4 and 5**.
 ### The Wiring Setup
 To use the Raspberry Pi 4/5 as a USB Gadget while maintaining sufficient power, you must use a **USB-C Y-Cable** (splitter) on the Pi's power/data port.
 
-```text
-                  +-------------+
-[Host PC] <-----> | Data Leg    |
-                  |             +---> [Pi USB-C Port]
-[Power Supply] -> | Power Leg   |
-                  +-------------+
-````
+There are two ways to get the required splitter. You can either
+[buy one](https://www.google.com/search?q=pikvm+usb%2Fpwr+splitter&tbm=shop), or
+[build it](https://www.tnt-audio.com/clinica/221_diy_usb_e.html) yourself.
+
+![wiring comparison](images/wiring.png)
+
 
 ## ⚡ Getting Started
 
-### Installation
+### 1. System Setup (OS Configuration)
+Before running the software, you must configure the Raspberry Pi kernel to support USB Gadget mode.
+
+1.  **Enable the DWC2 controller:**
+    Edit `/boot/firmware/config.txt` (or `/boot/config.txt` on older OS versions):
+    ```bash
+    sudo nano /boot/firmware/config.txt
+    ```
+    Add this line to the bottom:
+    ```ini
+    dtoverlay=dwc2
+    ```
+
+2.  **Load required modules:**
+    Edit `/boot/firmware/cmdline.txt` (or `/boot/cmdline.txt`):
+    ```bash
+    sudo nano /boot/firmware/cmdline.txt
+    ```
+    Append the following text to the end of the line (ensure it remains **one single line**, do not add newlines):
+    ```text
+    modules-load=dwc2,libcomposite
+    ```
+
+3.  **Reboot the Pi:**
+    ```bash
+    sudo reboot
+    ```
+
+### 2. Installation
 
 *Note: This project is currently in early development. Pre-built binaries will be available later.*
 
@@ -74,19 +101,3 @@ fn process_data(direction, data) {
 
     return data;
 }
-```
-
-Check the `scripts/` folder for more complex examples.
-
-## 🛠 Roadmap
-
-  - [x] Basic Packet Interception
-  - [x] Rhai Scripting Engine Integration
-  - [ ] Extend hardware support
-  - [ ] Pre-built binaries
-  - [ ] Advanced filtering
-  - [ ] Support multible devices at once (and compound scripts)
-
-## 📄 License
-
-This project is licensed under the MIT License - see the [LICENSE](LICENSE) file for details.
