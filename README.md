@@ -5,7 +5,7 @@
 
 **hid-proxy** is a lightweight USB HID proxy designed for the Raspberry Pi. It sits between a USB device and a Host PC, allowing you to intercept, log, and manipulate HID packets in real-time using **Rhai** scripts.
 
-## Use cases
+## 🪄 Use cases
 This project acts as the framework to enable creative USB HID manipulation including...
 * **Reverse Engineering:** Analyze and decipher the protocols of proprietary HID devices in real-time.
 * **Pentesting:** Deploy advanced keyloggers, clone device identities (VID/PID), or inject keystrokes (BadUSB/Rubber Ducky) with complex hardware triggers.
