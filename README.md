@@ -69,7 +69,7 @@ Before running the software, you must configure the Raspberry Pi kernel to suppo
 
 1.  Clone the repository:
     ```bash
-    git clone [https://github.com/yourusername/hid-proxy.git](https://github.com/yourusername/hid-proxy.git)
+    git clone [https://github.com/EiSiMo/hid-proxy.git](https://github.com/EiSiMo/hid-proxy.git)
     cd hid-proxy
     ```
 2.  Build and run using Cargo:
