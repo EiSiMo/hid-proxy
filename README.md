@@ -92,14 +92,14 @@ Before running the software, you must configure the Raspberry Pi kernel to suppo
     ```
 This command displays the raw data coming from the HID device, which is useful for developing your own Rhai scripts.
 
-## 📜 Scripting with Rhai
+## 📜 Scripting with [Rhai](https://github.com/rhaiscript/rhai)
 
 The core logic is handled by Rhai scripts found in the `scripts/` directory. You can modify data on the fly without recompiling the binary.
 
 ### The `process_data` Hook
 
 Your script must implement the following function:
-
+]
 ```rust
 // direction: "IN" (to host) or "OUT" (from host)
 // data: Array of bytes [u8]
