@@ -1,10 +1,10 @@
 use crate::device::HIDevice;
 use crate::scripting::{load_script_engine, process_payload};
-use rhai::{AST, Engine};
+use rhai::{AST, Engine, Scope};
 use rusb::{Context, DeviceHandle, Direction, Recipient, RequestType, UsbContext};
 use std::fs::{File, OpenOptions};
 use std::io::{Read, Write};
-use std::sync::Arc;
+use std::sync::{Arc, Mutex};
 use std::thread;
 use std::time::Duration;
 
@@ -29,7 +29,8 @@ pub fn proxy_loop(
     handle.claim_interface(target_info.interface_num)?;
 
     let handle = Arc::new(handle);
-    // Correctly typed as Arc<Option<(Engine, AST)>> to match scripting.rs
+
+    // Correctly typed to match updated scripting.rs signature
     let script_context = Arc::new(load_script_engine(script_name));
 
     // 2. Setup Gadget Files
@@ -64,7 +65,7 @@ fn bridge_device_to_host(
     handle: Arc<DeviceHandle<Context>>,
     mut gadget_write: File,
     target_info: HIDevice,
-    script_context: Arc<Option<(Engine, AST)>>,
+    script_context: Arc<Option<(Engine, AST, Mutex<Scope<'static>>)>>,
 ) -> Result<(), Box<dyn std::error::Error>> {
     let mut buf = vec![0u8; target_info.report_len as usize];
     let mut chunking_warned = false;
@@ -95,7 +96,7 @@ fn handle_input_packet(
     data: &[u8],
     gadget_write: &mut File,
     target_info: &HIDevice,
-    script_context: &Option<(Engine, AST)>,
+    script_context: &Option<(Engine, AST, Mutex<Scope<'static>>)>,
     chunking_warned: &mut bool,
 ) -> Result<(), Box<dyn std::error::Error>> {
     let r_len = target_info.report_len as usize;
@@ -118,7 +119,7 @@ fn send_chunked(
     data: &[u8],
     r_len: usize,
     gadget_write: &mut File,
-    script_context: &Option<(Engine, AST)>,
+    script_context: &Option<(Engine, AST, Mutex<Scope<'static>>)>,
 ) -> Result<(), Box<dyn std::error::Error>> {
     let chunk_count = data.len() / r_len;
 
@@ -142,7 +143,7 @@ fn send_chunked(
 fn send_single(
     data: &[u8],
     gadget_write: &mut File,
-    script_context: &Option<(Engine, AST)>,
+    script_context: &Option<(Engine, AST, Mutex<Scope<'static>>)>,
 ) -> Result<(), Box<dyn std::error::Error>> {
     let processed_data = process_payload(script_context, "IN", data);
     write_to_gadget_safe(gadget_write, &processed_data)
@@ -175,7 +176,7 @@ fn bridge_host_to_device(
     mut gadget_read: File,
     handle_output: Arc<DeviceHandle<Context>>,
     target_info: HIDevice,
-    script_context: Arc<Option<(Engine, AST)>>,
+    script_context: Arc<Option<(Engine, AST, Mutex<Scope<'static>>)>>,
 ) {
     let mut buf = [0u8; 64];
     loop {

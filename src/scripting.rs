@@ -1,7 +1,9 @@
 use rhai::{AST, Engine, Scope};
 use std::path::Path;
+use std::sync::Mutex;
 
-pub fn load_script_engine(script_name: Option<String>) -> Option<(Engine, AST)> {
+// Changed return type to include a Mutex protected Scope
+pub fn load_script_engine(script_name: Option<String>) -> Option<(Engine, AST, Mutex<Scope<'static>>)> {
     if let Some(name) = script_name {
         let path_str = format!("scripts/{}.rhai", name);
         let path = Path::new(&path_str);
@@ -11,8 +13,17 @@ pub fn load_script_engine(script_name: Option<String>) -> Option<(Engine, AST)> 
             let engine = Engine::new();
             match engine.compile_file(path_str.into()) {
                 Ok(ast) => {
-                    println!("[*] script compiled successfully.");
-                    return Some((engine, ast));
+                    // Create a persistent scope
+                    let mut scope = Scope::new();
+
+                    // Run the AST once to initialize global variables (like history buffers)
+                    if let Err(e) = engine.run_ast_with_scope(&mut scope, &ast) {
+                        println!("[!] script initialization error: {}", e);
+                        return None;
+                    }
+
+                    println!("[*] script compiled and initialized successfully.");
+                    return Some((engine, ast, Mutex::new(scope)));
                 }
                 Err(e) => println!("[!] script compilation error: {}", e),
             }
@@ -27,26 +38,29 @@ pub fn load_script_engine(script_name: Option<String>) -> Option<(Engine, AST)> 
 }
 
 pub fn process_payload(
-    engine_opt: &Option<(Engine, AST)>,
+    engine_opt: &Option<(Engine, AST, Mutex<Scope<'static>>)>,
     direction: &str,
     data: &[u8],
 ) -> Vec<u8> {
-    if let Some((engine, ast)) = engine_opt {
+    if let Some((engine, ast, scope_mutex)) = engine_opt {
         let blob: Vec<rhai::Dynamic> = data.iter().map(|&b| (b as i64).into()).collect();
-        let mut scope = Scope::new();
 
-        let result: Result<Vec<rhai::Dynamic>, _> =
-            engine.call_fn(&mut scope, ast, "process", (direction.to_string(), blob));
+        // Lock the scope so we can reuse the state from the previous packet
+        if let Ok(mut scope) = scope_mutex.lock() {
+            let result: Result<Vec<rhai::Dynamic>, _> =
+                engine.call_fn(&mut *scope, ast, "process", (direction.to_string(), blob));
 
-        match result {
-            Ok(modified_blob) => {
-                return modified_blob
-                    .iter()
-                    .map(|d| d.as_int().unwrap_or(0) as u8)
-                    .collect();
-            }
-            Err(_) => {
-                return data.to_vec();
+            match result {
+                Ok(modified_blob) => {
+                    return modified_blob
+                        .iter()
+                        .map(|d| d.as_int().unwrap_or(0) as u8)
+                        .collect();
+                }
+                Err(e) => {
+                    println!("[!] error while executing rhai script: {e}");
+                    return data.to_vec();
+                }
             }
         }
     }
