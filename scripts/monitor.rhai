@@ -1,4 +1,7 @@
+let package_count = 0;
+
 fn process(direction, data) {
-    print(`${data.len()} bytes [${direction}]: ${data}`);
+    package_count += 1;
+    print(`[${package_count}] ${data.len()} ${direction}: ${data}`);
     return data;
 }
