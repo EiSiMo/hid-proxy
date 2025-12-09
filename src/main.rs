@@ -4,6 +4,7 @@ mod gadget;
 mod proxy;
 mod scripting;
 mod setup;
+mod bindings;
 
 use clap::Parser;
 use crate::device::HIDevice;
@@ -65,6 +66,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                 if let Some(d) = found {
                     break d.clone();
                 } else {
+                    // TODO look into this
                     println!("[*] waiting for target device '{}'...", target_str);
                     tokio::time::sleep(Duration::from_millis(1000)).await;
                     continue;

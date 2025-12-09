@@ -2,6 +2,8 @@ use rhai::{AST, Engine, Scope};
 use std::path::Path;
 use std::sync::Mutex;
 
+use crate::bindings::register_native_fns;
+
 // Changed return type to include a Mutex protected Scope
 pub fn load_script_engine(script_name: Option<String>) -> Option<(Engine, AST, Mutex<Scope<'static>>)> {
     if let Some(name) = script_name {
@@ -10,7 +12,10 @@ pub fn load_script_engine(script_name: Option<String>) -> Option<(Engine, AST, M
 
         if path.exists() {
             println!("[*] loading script {}", path_str);
-            let engine = Engine::new();
+            let mut engine = Engine::new();
+
+            register_native_fns(&mut engine);
+
             match engine.compile_file(path_str.into()) {
                 Ok(ast) => {
                     // Create a persistent scope
