@@ -1,7 +1,14 @@
-# hid-proxy
+<p align="center">
+  <img src="images/logo.png" alt="hid-proxy Logo" width="150" style="border-radius: 50%;">
+</p>
+<h1 align="center">hid-proxy</h1>
 
-![Status](https://img.shields.io/badge/Status-Proof_of_Concept-orange)
-![Platform](https://img.shields.io/badge/Platform-Raspberry_Pi_4%2F5-red)
+<p align="center">
+    <img src="https://img.shields.io/badge/License-MIT-blue.svg" alt="License: MIT">
+    <img src="https://img.shields.io/github/last-commit/EiSiMo/hid-proxy.svg" alt="Last Commit">
+    <img src="https://img.shields.io/badge/Status-Alpha-green" alt="Status">
+    <img src="https://img.shields.io/badge/Platform-Raspberry_Pi_4%2F5-red" alt="Platform">
+</p>
 
 **hid-proxy** is a lightweight USB HID proxy designed for the Raspberry Pi. It sits between a USB device and a Host PC, allowing you to intercept, log, and manipulate HID packets in real-time using **Rhai** scripts.
 
@@ -76,6 +83,14 @@ Before running the software, you must configure the Raspberry Pi kernel to suppo
     ```bash
     cargo run --release
     ```
+
+### 3. Usage
+1. The most essential command for development is:
+
+    ```bash
+    sudo ./target/release/hid-proxy -s monitor
+    ```
+This command displays the raw data coming from the HID device, which is useful for developing your own Rhai scripts.
 
 ## 📜 Scripting with Rhai
 
