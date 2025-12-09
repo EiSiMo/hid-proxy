@@ -6,7 +6,7 @@
 <p align="center">
     <img src="https://img.shields.io/badge/License-MIT-blue.svg" alt="License: MIT">
     <img src="https://img.shields.io/github/last-commit/EiSiMo/hid-proxy.svg" alt="Last Commit">
-    <img src="https://img.shields.io/badge/Status-Alpha-green" alt="Status">
+    <img src="https://img.shields.io/badge/Status-Alpha-orange" alt="Status">
     <img src="https://img.shields.io/badge/Platform-Raspberry_Pi_4%2F5-red" alt="Platform">
 </p>
 
