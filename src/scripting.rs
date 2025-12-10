@@ -6,36 +6,38 @@ use crate::proxy::SharedState;
 
 pub fn load_script_engine(script_name: Option<String>, shared_state: Arc<SharedState>) -> Option<(Engine, AST, Mutex<Scope<'static>>)> {
     if let Some(name) = script_name {
-        let path_str = format!("examples/{}.rhai", name);
-        let path = Path::new(&path_str);
+        let example_path_str = format!("examples/{}", name);
+        let example_path = Path::new(&example_path_str);
+        let direct_path = Path::new(&name);
 
-        if path.exists() {
-            println!("[*] loading script {}", path_str);
+        let chosen_path = if example_path.exists() {
+            Some(example_path.to_path_buf())
+        } else if direct_path.exists() {
+            Some(direct_path.to_path_buf())
+        } else {
+            None
+        };
+
+        if let Some(path) = chosen_path {
+            println!("[*] loading script {}", path.display());
             let mut engine = Engine::new();
 
             register_native_fns(&mut engine, Arc::clone(&shared_state));
 
-            match engine.compile_file(path_str.into()) {
+            match engine.compile_file(path) {
                 Ok(ast) => {
-                    // Create a persistent scope
                     let mut scope = Scope::new();
-
-                    // Run the AST once to initialize global variables (like history buffers)
                     if let Err(e) = engine.run_ast_with_scope(&mut scope, &ast) {
                         println!("[!] script initialization error: {}", e);
                         return None;
                     }
-
                     println!("[*] script compiled and initialized successfully.");
                     return Some((engine, ast, Mutex::new(scope)));
                 }
                 Err(e) => println!("[!] script compilation error: {}", e),
             }
         } else {
-            println!(
-                "[!] script file {} not found, running without script",
-                path_str
-            );
+            println!("[!] script file '{name}' not found");
         }
     }
     None

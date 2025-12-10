@@ -1,5 +1,15 @@
 use std::fs;
 use std::process::Command;
+use std::path::Path;
+
+/// Checks if the provided script file exists in `examples/` or the project root.
+pub fn is_script_found(script_name: &str) -> bool {
+    let example_path_str = format!("examples/{}", script_name);
+    let example_path = Path::new(&example_path_str);
+    let direct_path = Path::new(script_name);
+
+    example_path.exists() || direct_path.exists()
+}
 
 /// Checks for root privileges, exiting if not found.
 pub fn check_root() {

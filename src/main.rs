@@ -22,6 +22,13 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     let args = cli::Args::parse();
 
+    if let Some(ref name) = args.script {
+        if !setup::is_script_found(name) {
+            println!("[!] script file '{}' not found", name);
+            std::process::exit(1);
+        }
+    }
+
     tokio::spawn(async move {
         tokio::signal::ctrl_c().await.unwrap();
         setup::toggle_terminal_echo(true);
@@ -31,7 +38,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     });
 
     if let Some(ref name) = args.script {
-        println!("[*] active interception using 'examples/{}.rhai'", name);
+        println!("[*] using script '{}'", name);
     } else {
         println!("[*] no active script");
     }
