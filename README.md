@@ -94,7 +94,7 @@ This command displays the raw data coming from the HID device, which is useful f
 
 ## 📜 Scripting with [Rhai](https://github.com/rhaiscript/rhai)
 
-The core logic is handled by Rhai scripts found in the `scripts/` directory. You can modify data on the fly without recompiling the binary.
+The core logic is handled by Rhai scripts found in the `examples/` directory. You can modify data on the fly without recompiling the binary.
 
 ### The `process_data` Hook
 
