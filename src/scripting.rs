@@ -6,7 +6,7 @@ use crate::proxy::SharedState;
 
 pub fn load_script_engine(script_name: Option<String>, shared_state: Arc<SharedState>) -> Option<(Engine, AST, Mutex<Scope<'static>>)> {
     if let Some(name) = script_name {
-        let path_str = format!("scripts/{}.rhai", name);
+        let path_str = format!("examples/{}.rhai", name);
         let path = Path::new(&path_str);
 
         if path.exists() {

@@ -31,7 +31,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     });
 
     if let Some(ref name) = args.script {
-        println!("[*] active interception using 'scripts/{}.rhai'", name);
+        println!("[*] active interception using 'examples/{}.rhai'", name);
     } else {
         println!("[*] no active script");
     }
