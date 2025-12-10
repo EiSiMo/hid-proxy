@@ -15,10 +15,10 @@ pub fn register_native_fns(engine: &mut Engine, shared_state: Arc<SharedState>) 
     });
 }
 
-fn get_timestamp_ms() -> u64 {
+fn get_timestamp_ms() -> i64 {
     let now = SystemTime::now();
     let duration = now.duration_since(UNIX_EPOCH).expect("Time went backwards");
-    duration.as_millis() as u64
+    duration.as_millis() as i64
 }
 
 fn send_to_host<'a>(
