@@ -12,6 +12,7 @@ pub fn wait_for_host_connection() {
 
     let mut plug_host_warning_sent = false;
     loop {
+        thread::sleep(Duration::from_millis(500));
         if let Ok(state) = fs::read_to_string(&state_path) {
             if state.trim() == "configured" {
                 println!("[+] host computer connected");
