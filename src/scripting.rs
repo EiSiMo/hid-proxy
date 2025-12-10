@@ -1,11 +1,10 @@
 use rhai::{AST, Engine, Scope};
 use std::path::Path;
-use std::sync::Mutex;
-
+use std::sync::{Arc, Mutex};
 use crate::bindings::register_native_fns;
+use crate::proxy::SharedState;
 
-// Changed return type to include a Mutex protected Scope
-pub fn load_script_engine(script_name: Option<String>) -> Option<(Engine, AST, Mutex<Scope<'static>>)> {
+pub fn load_script_engine(script_name: Option<String>, shared_state: Arc<SharedState>) -> Option<(Engine, AST, Mutex<Scope<'static>>)> {
     if let Some(name) = script_name {
         let path_str = format!("scripts/{}.rhai", name);
         let path = Path::new(&path_str);
@@ -14,7 +13,7 @@ pub fn load_script_engine(script_name: Option<String>) -> Option<(Engine, AST, M
             println!("[*] loading script {}", path_str);
             let mut engine = Engine::new();
 
-            register_native_fns(&mut engine);
+            register_native_fns(&mut engine, Arc::clone(&shared_state));
 
             match engine.compile_file(path_str.into()) {
                 Ok(ast) => {

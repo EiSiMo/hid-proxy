@@ -8,6 +8,11 @@ use std::sync::{Arc, Mutex};
 use std::thread;
 use std::time::Duration;
 
+pub struct SharedState {
+    pub gadget_write: Mutex<File>,
+    pub target_info: HIDevice,
+}
+
 pub fn proxy_loop(
     target_info: HIDevice,
     script_name: Option<String>,
@@ -30,9 +35,6 @@ pub fn proxy_loop(
 
     let handle = Arc::new(handle);
 
-    // Correctly typed to match updated scripting.rs signature
-    let script_context = Arc::new(load_script_engine(script_name));
-
     // 2. Setup Gadget Files
     let gadget_path = "/dev/hidg0";
     let gadget_write = OpenOptions::new()
@@ -45,17 +47,24 @@ pub fn proxy_loop(
 
     println!("[*] bidirectional tunnel established");
 
+    let shared_state = Arc::new(SharedState {
+        gadget_write: Mutex::new(gadget_write),
+        target_info: target_info.clone(),
+    });
+
+    // Correctly typed to match updated scripting.rs signature
+    let script_context = Arc::new(load_script_engine(script_name, Arc::clone(&shared_state)));
+
     // 3. Spawn Host -> Device Worker (Thread)
     let handle_output = Arc::clone(&handle);
     let script_context_output = Arc::clone(&script_context);
-    let target_info_output = target_info.clone();
 
     thread::spawn(move || {
-        bridge_host_to_device(gadget_read, handle_output, target_info_output, script_context_output);
+        bridge_host_to_device(gadget_read, handle_output, target_info.clone(), script_context_output);
     });
 
     // 4. Run Device -> Host Worker (Main Loop)
-    bridge_device_to_host(handle, gadget_write, target_info, script_context)?;
+    bridge_device_to_host(handle, shared_state, script_context)?;
 
     Ok(())
 }
@@ -63,23 +72,21 @@ pub fn proxy_loop(
 /// Main Loop: Reads from physical USB device and forwards to Host (Gadget)
 fn bridge_device_to_host(
     handle: Arc<DeviceHandle<Context>>,
-    mut gadget_write: File,
-    target_info: HIDevice,
+    shared_state: Arc<SharedState>,
     script_context: Arc<Option<(Engine, AST, Mutex<Scope<'static>>)>>,
 ) -> Result<(), Box<dyn std::error::Error>> {
-    let mut buf = vec![0u8; target_info.report_len as usize];
+    let mut buf = vec![0u8; shared_state.target_info.report_len as usize];
     let mut chunking_warned = false;
 
     loop {
-        match handle.read_interrupt(target_info.endpoint_in, &mut buf, Duration::from_millis(100)) {
+        match handle.read_interrupt(shared_state.target_info.endpoint_in, &mut buf, Duration::from_millis(100)) {
             Ok(size) if size > 0 => {
                 let data = &buf[..size];
 
                 // Logic delegation
                 handle_input_packet(
                     data,
-                    &mut gadget_write,
-                    &target_info,
+                    &shared_state,
                     &script_context,
                     &mut chunking_warned
                 )?;
@@ -92,36 +99,36 @@ fn bridge_device_to_host(
 }
 
 /// Decides strategy: Chunking (Splitting) vs. Normal Forwarding
-fn handle_input_packet(
+pub fn handle_input_packet(
     data: &[u8],
-    gadget_write: &mut File,
-    target_info: &HIDevice,
+    shared_state: &Arc<SharedState>,
     script_context: &Option<(Engine, AST, Mutex<Scope<'static>>)>,
     chunking_warned: &mut bool,
 ) -> Result<(), Box<dyn std::error::Error>> {
-    let r_len = target_info.report_len as usize;
+    let r_len = shared_state.target_info.report_len as usize;
 
     // Check if data is larger than report length AND a multiple of it
     if data.len() > r_len && data.len() % r_len == 0 {
         if !*chunking_warned {
-            println!("[!] device reported {} bytes but stated a report length of {}", data.len(), target_info.report_len);
+            println!("[!] device reported {} bytes but stated a report length of {}", data.len(), shared_state.target_info.report_len);
             println!("[*] chunking data");
             *chunking_warned = true;
         }
-        send_chunked(data, r_len, gadget_write, script_context)
+        send_chunked(data, r_len, shared_state, script_context)
     } else {
         // Normal behavior or non-aligned mismatch
-        send_single(data, gadget_write, script_context)
+        send_single(data, shared_state, script_context)
     }
 }
 
 fn send_chunked(
     data: &[u8],
     r_len: usize,
-    gadget_write: &mut File,
+    shared_state: &Arc<SharedState>,
     script_context: &Option<(Engine, AST, Mutex<Scope<'static>>)>,
 ) -> Result<(), Box<dyn std::error::Error>> {
     let chunk_count = data.len() / r_len;
+    let mut gadget_write = shared_state.gadget_write.lock().unwrap();
 
     for i in 0..chunk_count {
         let offset = i * r_len;
@@ -129,7 +136,7 @@ fn send_chunked(
 
         let processed_chunk = process_payload(script_context, "IN", chunk);
 
-        if let Err(e) = write_to_gadget_safe(gadget_write, &processed_chunk) {
+        if let Err(e) = write_to_gadget_safe(&mut gadget_write, &processed_chunk) {
             eprintln!("[!] dropped chunk {}/{}: {}", i + 1, chunk_count, e);
             // Stop sending remaining chunks if connection is dead
             if e.to_string().contains("host disconnected") { return Err(e); }
@@ -142,15 +149,16 @@ fn send_chunked(
 
 fn send_single(
     data: &[u8],
-    gadget_write: &mut File,
+    shared_state: &Arc<SharedState>,
     script_context: &Option<(Engine, AST, Mutex<Scope<'static>>)>,
 ) -> Result<(), Box<dyn std::error::Error>> {
     let processed_data = process_payload(script_context, "IN", data);
-    write_to_gadget_safe(gadget_write, &processed_data)
+    let mut gadget_write = shared_state.gadget_write.lock().unwrap();
+    write_to_gadget_safe(&mut gadget_write, &processed_data)
 }
 
 /// Low-level write helper: Handles EAGAIN (busy) and ESHUTDOWN (disconnect)
-fn write_to_gadget_safe(file: &mut File, data: &[u8]) -> Result<(), Box<dyn std::error::Error>> {
+pub(crate) fn write_to_gadget_safe(file: &mut File, data: &[u8]) -> Result<(), Box<dyn std::error::Error>> {
     loop {
         match file.write_all(data) {
             Ok(_) => return Ok(()),
