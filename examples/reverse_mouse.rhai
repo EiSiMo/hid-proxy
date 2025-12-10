@@ -1,53 +1,46 @@
+// reverse_mouse.rhai
+// this simple script inverts mouse movement (up becomes down, left becomes right).
+// it parses 12-bit mouse data, flips the values, and repacks them.
+//
+// this was only tested on the "Amazon Basics Mouse" and your model might require tweaking the script
+
 fn process(direction, data) {
-    // Check for Report ID 2 and enough length for 12-bit packed data
+    // only process input data from the mouse (direction "IN")
+    // check for report id 2 and sufficient data length
     if direction == "IN" && data.len() >= 5 && data[0] == 2 {
 
-        // --- STEP 1: UNPACK 12-BIT VALUES ---
+        // unpack the 12-bit x coordinate
+        // combines byte 2 and the lower half of byte 3
+        let x_raw = data[2] | ((data[3] & 0x0f) << 8);
 
-        // X consists of Byte 2 (low 8 bits) and the lower half of Byte 3 (high 4 bits)
-        // We combine them into one number.
-        let x_low = data[2];
-        let x_high = data[3] & 0x0F; // 0x0F is 00001111 (mask lower 4 bits)
-        let x = x_low | (x_high << 8);
+        // convert to signed integer to handle negative numbers
+        let x = if x_raw >= 2048 { x_raw - 4096 } else { x_raw };
 
-        // Sign extension: If the number is negative (12th bit is 1),
-        // we must subtract 4096 to make it a proper negative integer in Rhai.
-        if x >= 2048 {
-            x = x - 4096;
-        }
+        // unpack the 12-bit y coordinate
+        // combines the upper half of byte 3 and byte 4
+        let y_raw = ((data[3] & 0xf0) >> 4) | (data[4] << 4);
+        let y = if y_raw >= 2048 { y_raw - 4096 } else { y_raw };
 
-        // Y consists of the upper half of Byte 3 (low 4 bits) and Byte 4 (high 8 bits)
-        let y_low = (data[3] & 0xF0) >> 4; // 0xF0 is 11110000, shift right to get value
-        let y_high = data[4];
-        let y = y_low | (y_high << 4);
-
-        if y >= 2048 {
-            y = y - 4096;
-        }
-
-        // --- STEP 2: INVERT ---
-
-        // Now we have clean numbers (e.g., 5, -10, 0). We can simply flip them.
+        // invert the movements
         x = -x;
         y = -y;
 
-        // --- STEP 3: REPACK INTO 12-BIT ---
+        // prepare x for repacking (convert back to 12-bit unsigned)
+        if x < 0 { x += 4096; }
 
-        // Convert back to 12-bit unsigned representation (handle negatives)
-        if x < 0 { x = x + 4096; }
-        if y < 0 { y = y + 4096; }
+        // prepare y for repacking
+        if y < 0 { y += 4096; }
 
-        // Put X back
-        data[2] = x & 0xFF; // Bottom 8 bits
-        let new_x_high_nibble = (x >> 8) & 0x0F;
+        // write back to the packet
+        data[2] = x & 0xff;
 
-        // Put Y back
-        let new_y_low_nibble = y & 0x0F;
-        data[4] = (y >> 4) & 0xFF; // Top 8 bits
+        // byte 3 is shared: high nibble of x and low nibble of y
+        let x_part = (x >> 8) & 0x0f;
+        let y_part = (y & 0x0f) << 4;
+        data[3] = x_part | y_part;
 
-        // Combine the middle byte (Byte 3)
-        // It gets the high part of X and the low part of Y
-        data[3] = new_x_high_nibble | (new_y_low_nibble << 4);
+        data[4] = (y >> 4) & 0xff;
     }
+
     send_to(direction, data);
 }

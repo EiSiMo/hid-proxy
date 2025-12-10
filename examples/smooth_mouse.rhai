@@ -1,17 +1,21 @@
+// smooth_mouse.rhai
+// this script smooths mouse movement using a moving average algorithm.
+// it keeps a history of the last few movements and averages them to filter out jitter.
+//
+// this was only tested on the "Amazon Basics Mouse" and your model might require tweaking the script
+
 const SAMPLES = 50;
 
-// Initialize Global Arrays
+// initialize history arrays
 let history_x = [];
 let history_y = [];
-let idx = 0;
+let index = 0;
 
-// Accumulators for remainders
-let acc_x = 0;
-let acc_y = 0;
+// variables to store the division remainder to prevent drifting
+let remainder_x = 0;
+let remainder_y = 0;
 
-// --- INITIALIZATION ---
-// We must pre-fill the history with Zeros.
-// Otherwise the average calculation starts instantly at 100% speed.
+// pre-fill history with zeros to avoid instant speed jumps at start
 let i = 0;
 while i < SAMPLES {
     history_x.push(0);
@@ -20,71 +24,66 @@ while i < SAMPLES {
 }
 
 fn process(direction, data) {
+    // only process input data (direction "IN")
+    // data[0] == 2 checks if it is a mouse report (specific to this mouse model)
     if direction == "IN" && data.len() >= 5 && data[0] == 2 {
-        // --- STEP 1: UNPACK 12-BIT ---
-        let x_low = data[2];
-        let x_high = data[3] & 0x0F;
-        let x = x_low | (x_high << 8);
 
-        // Handle negative numbers (12-bit signed)
-        let real_x = if x >= 2048 { x - 4096 } else { x };
+        // unpack the 12-bit x coordinate
+        // combines the full 2nd byte and the lower half of the 3rd byte
+        let x_raw = data[2] | ((data[3] & 0x0f) << 8);
 
-        let y_low = (data[3] & 0xF0) >> 4;
-        let y_high = data[4];
-        let y = y_low | (y_high << 4);
+        // convert to signed integer (handle negative movement)
+        let x = if x_raw >= 2048 { x_raw - 4096 } else { x_raw };
 
-        let real_y = if y >= 2048 { y - 4096 } else { y };
+        // unpack the 12-bit y coordinate
+        // combines the upper half of the 3rd byte and the full 4th byte
+        let y_raw = ((data[3] & 0xf0) >> 4) | (data[4] << 4);
+        let y = if y_raw >= 2048 { y_raw - 4096 } else { y_raw };
 
-        // --- STEP 2: SMOOTHING (Fixed Window) ---
-        // Overwrite the oldest value in the ring buffer
-        history_x[idx] = real_x;
-        history_y[idx] = real_y;
+        // overwrite the oldest value in the history buffer
+        history_x[index] = x;
+        history_y[index] = y;
 
-        // Move index forward and wrap around
-        idx = (idx + 1) % SAMPLES;
+        // move the index forward (ring buffer)
+        index = (index + 1) % SAMPLES;
 
-        // Calculate Sum
+        // calculate the sum of all history values
         let sum_x = 0;
         let sum_y = 0;
 
-        // Using a standard loop since Rhai iterator performance varies
-        for val in history_x {
-            sum_x += val;
-        }
-        for val in history_y {
-            sum_y += val;
-        }
+        for val in history_x { sum_x += val; }
+        for val in history_y { sum_y += val; }
 
-        // Add the remainder from previous calculations to avoid drifting
-        sum_x += acc_x;
-        sum_y += acc_y;
+        // add the remainder from the last calculation
+        sum_x += remainder_x;
+        sum_y += remainder_y;
 
-        // Calculate Average
-        // CRITICAL: Always divide by SAMPLES (fixed size), not current length
+        // calculate the new average
         let avg_x = sum_x / SAMPLES;
         let avg_y = sum_y / SAMPLES;
 
-        // Save new remainders
-        acc_x = sum_x % SAMPLES;
-        acc_y = sum_y % SAMPLES;
+        // save the new remainder for the next cycle
+        remainder_x = sum_x % SAMPLES;
+        remainder_y = sum_y % SAMPLES;
 
-        // --- STEP 3: REPACK 12-BIT ---
+        // prepare x for repacking (convert back to 12-bit unsigned)
+        let pack_x = avg_x;
+        if pack_x < 0 { pack_x += 4096; }
 
-        // Convert back to 12-bit unsigned
-        let repacked_x = avg_x;
-        if repacked_x < 0 { repacked_x += 4096; }
+        // prepare y for repacking
+        let pack_y = avg_y;
+        if pack_y < 0 { pack_y += 4096; }
 
-        let repacked_y = avg_y;
-        if repacked_y < 0 { repacked_y += 4096; }
+        // write the smoothed data back into the packet
+        data[2] = pack_x & 0xff;
 
-        // Write back to packet
-        data[2] = repacked_x & 0xFF;
+        // byte 3 contains parts of both x and y
+        let part_x = (pack_x >> 8) & 0x0f;
+        let part_y = (pack_y & 0x0f) << 4;
+        data[3] = part_x | part_y;
 
-        let new_x_high_nibble = (repacked_x >> 8) & 0x0F;
-        let new_y_low_nibble = repacked_y & 0x0F;
-
-        data[3] = new_x_high_nibble | (new_y_low_nibble << 4);
-        data[4] = (repacked_y >> 4) & 0xFF;
+        data[4] = (pack_y >> 4) & 0xff;
     }
+
     send_to(direction, data);
 }

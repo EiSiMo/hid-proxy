@@ -1,15 +1,28 @@
-let last_click_time = get_timestamp_ms();
+// measure_presstime.rhai
+// this script demonstrates how to measure time between events using the custom 'get_timestamp_ms()' function.
+// it calculates the time in milliseconds between two presses of the spacebar.
+//
+// this was only tested on the "Logitech MX Keys S (GERMAN)" and your model might require tweaking the script
+
+// get_timestamp_ms() is a special function provided by hid-proxy.
+// it returns the current system time in milliseconds.
+let last_press_time = get_timestamp_ms();
 
 fn process(direction, data) {
-    // Check for Report ID 2 and enough length for 12-bit packed data
-    if direction == "IN" {
-        if data[2] == 44 {
-            let time = get_timestamp_ms();
-            let difference = time - last_click_time;
-            print(`time between to space presses: ${difference} ms`);
+    // filter for input from the keyboard
+    // data[2] == 44 checks if the spacebar (hid code 44) is currently pressed
+    if direction == "IN" && data[2] == 44 {
 
-            last_click_time = time;
-        }
+        let current_time = get_timestamp_ms();
+
+        // calculate time passed since the last spacebar press
+        let time_diff = current_time - last_press_time;
+
+        print(`time between two space presses: ${time_diff} ms`);
+
+        // update the timestamp for the next measurement
+        last_press_time = current_time;
     }
+
     send_to(direction, data);
 }
