@@ -100,10 +100,9 @@ The core logic is handled by Rhai scripts found in the `examples/` directory. Yo
 
 Your script must implement the following function:
 ]
-```rust
-// direction: "IN" (to host) or "OUT" (from host)
+```rhai
+// direction: "IN" (to host) or "OUT" (to device)
 // data: Array of bytes [u8]
-// returns: Array of bytes [u8] (modified or original)
 
 fn process_data(direction, data) {
     // Example: Log traffic
@@ -114,5 +113,6 @@ fn process_data(direction, data) {
         data[1] = 0xFF;
     }
 
-    return data;
+    send_to(direction, data);
 }
+```

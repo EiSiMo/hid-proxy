@@ -49,6 +49,5 @@ fn process(direction, data) {
         // It gets the high part of X and the low part of Y
         data[3] = new_x_high_nibble | (new_y_low_nibble << 4);
     }
-
-    return data;
+    send_to(direction, data);
 }

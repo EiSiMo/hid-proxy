@@ -40,5 +40,4 @@ fn process(direction, data) {
             }
         }
     }
-    return [2, 0, 0, 0, 0, 0, 0];
 }

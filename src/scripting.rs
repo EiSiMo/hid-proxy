@@ -49,22 +49,12 @@ pub fn process_payload(
     if let Some((engine, ast, scope_mutex)) = engine_opt {
         let blob: Vec<rhai::Dynamic> = data.iter().map(|&b| (b as i64).into()).collect();
 
-        // Lock the scope so we can reuse the state from the previous packet
         if let Ok(mut scope) = scope_mutex.lock() {
-            let result: Result<Vec<rhai::Dynamic>, _> =
+            let result: Result<(), _> =
                 engine.call_fn(&mut *scope, ast, "process", (direction.to_string(), blob));
 
-            match result {
-                Ok(modified_blob) => {
-                    return modified_blob
-                        .iter()
-                        .map(|d| d.as_int().unwrap_or(0) as u8)
-                        .collect();
-                }
-                Err(e) => {
-                    println!("[!] error while executing rhai script: {e}");
-                    return data.to_vec();
-                }
+            if let Err(e) = result {
+                println!("[!] error while executing rhai script: {e}");
             }
         }
     }

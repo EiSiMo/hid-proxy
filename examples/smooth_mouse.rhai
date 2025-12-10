@@ -86,5 +86,5 @@ fn process(direction, data) {
         data[3] = new_x_high_nibble | (new_y_low_nibble << 4);
         data[4] = (repacked_y >> 4) & 0xFF;
     }
-    return data;
+    send_to(direction, data);
 }
