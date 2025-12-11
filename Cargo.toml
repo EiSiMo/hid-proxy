@@ -1,6 +1,6 @@
 [package]
 name = "hid-proxy"
-version = "0.3.0"
+version = "0.3.1"
 edition = "2024"
 authors = ["Moritz Eigenauer <moritz.eigenauer+hid-proxy@gmail.com>"]
 license = "MIT"
