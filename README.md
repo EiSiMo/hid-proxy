@@ -42,53 +42,22 @@ There are two ways to get the required splitter. You can either
 
 ## ⚡ Getting Started
 
-### 1. System Setup (OS Configuration)
-Before running the software, you must configure the Raspberry Pi kernel to support USB Gadget mode.
+Simply run the following command on your Raspberry Pi:
+```bash
+curl -sSL https://raw.githubusercontent.com/EiSiMo/hid-proxy/main/install.sh | sudo bash
+```
 
-1.  **Enable the DWC2 controller:**
-    Edit `/boot/firmware/config.txt` (or `/boot/config.txt` on older OS versions):
-    ```bash
-    sudo nano /boot/firmware/config.txt
-    ```
-    Add this line to the bottom:
-    ```ini
-    dtoverlay=dwc2
-    ```
+This will:
+* Configure the required system settings
+* Download the latest release
+* Place the binary in `/usr/local/bin` and examples in `/usr/local/share/hid-proxy`
+* Prompt for a reboot
 
-2.  **Load required modules:**
-    Edit `/boot/firmware/cmdline.txt` (or `/boot/cmdline.txt`):
-    ```bash
-    sudo nano /boot/firmware/cmdline.txt
-    ```
-    Append the following text to the end of the line (ensure it remains **one single line**, do not add newlines):
-    ```text
-    modules-load=dwc2,libcomposite
-    ```
-
-3.  **Reboot the Pi:**
-    ```bash
-    sudo reboot
-    ```
-
-### 2. Installation
-
-*Note: This project is currently in early development. Pre-built binaries will be available later.*
-
-1.  Clone the repository:
-    ```bash
-    git clone [https://github.com/EiSiMo/hid-proxy.git](https://github.com/EiSiMo/hid-proxy.git)
-    cd hid-proxy
-    ```
-2.  Build and run using Cargo:
-    ```bash
-    cargo run --release
-    ```
-
-### 3. Usage
+### Usage
 1. The most essential command for development is:
 
     ```bash
-    sudo ./target/release/hid-proxy -s monitor
+    sudo hid-proxy -s monitor
     ```
 This command displays the raw data coming from the HID device, which is useful for developing your own Rhai scripts.
 

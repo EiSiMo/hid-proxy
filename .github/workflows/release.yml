@@ -1,0 +1,26 @@
+name: Release
+
+on:
+  push:
+    tags:
+      - 'v*'
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v3
+      - name: Install cross
+        run: cargo install cross --git https://github.com/cross-rs/cross
+      - name: Build
+        run: cross build --target aarch64-unknown-linux-gnu --release
+      - name: Prepare package
+        run: |
+          mkdir hid-proxy_aarch64
+          cp target/aarch64-unknown-linux-gnu/release/hid-proxy hid-proxy_aarch64/
+          cp -r examples hid-proxy_aarch64/
+          tar -czvf hid-proxy_aarch64.tar.gz hid-proxy_aarch64
+      - name: Release
+        uses: softprops/action-gh-release@v1
+        with:
+          files: hid-proxy_aarch64.tar.gz
