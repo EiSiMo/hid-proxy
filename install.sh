@@ -58,7 +58,6 @@ echo "[*] creating temporary directory"
 TEMP_DIR=$(mktemp -d)
 
 echo "[*] downloading latest release"
-# Changed: Added -f (fail silently on HTTP errors) so we don't save HTML error pages as tar.gz
 curl -fsSL -o "$TEMP_DIR/hid-proxy_aarch64.tar.gz" "https://github.com/EiSiMo/hid-proxy/releases/latest/download/hid-proxy_aarch64.tar.gz" || exit 1
 
 echo "[*] extracting archive"

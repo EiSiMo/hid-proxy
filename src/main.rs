@@ -14,12 +14,10 @@ use std::path::PathBuf;
 
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
-    // --- Setup & Pre-flight Checks ---
     setup::toggle_terminal_echo(false);
     setup::check_root();
     setup::check_config_txt();
     setup::check_kernel_setup();
-    // --- End of Setup ---
 
     let args = cli::Args::parse();
     let mut script_path: Option<PathBuf> = None;
@@ -76,10 +74,9 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                 if let Some(d) = found {
                     break d.clone();
                 } else {
-                    // TODO look into this
-                    println!("[*] waiting for target device '{}'...", target_str);
-                    tokio::time::sleep(Duration::from_millis(1000)).await;
-                    continue;
+                    println!("[!] target device '{}' not found", target_str);
+                    setup::toggle_terminal_echo(true);
+                    std::process::exit(1);
                 }
             }
 
