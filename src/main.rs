@@ -43,7 +43,7 @@ async fn run_proxy() -> Result<(), Box<dyn std::error::Error>> {
     tokio::spawn(async move {
         tokio::signal::ctrl_c().await.unwrap();
         setup::toggle_terminal_echo(true);
-        info!("\rCTRL+C detected, cleaning up");
+        println!("\nCTRL+C detected, cleaning up");
         if gadget_created_clone.load(Ordering::SeqCst) {
             gadget::cleanup_gadget_emergency();
         }
