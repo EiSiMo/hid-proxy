@@ -44,7 +44,7 @@ There are two ways to get the required splitter. You can either
 
 Simply run the following command on your Raspberry Pi:
 ```bash
-curl -sSL https://raw.githubusercontent.com/EiSiMo/hid-proxy/main/install.sh | sudo bash
+curl -sSL https://raw.githubusercontent.com/EiSiMo/hid-proxy/master/install.sh | sudo bash
 ```
 
 This will:
