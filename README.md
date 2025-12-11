@@ -53,6 +53,11 @@ This will:
 * Place the binary in `/usr/local/bin` and examples in `/usr/local/share/hid-proxy`
 * Prompt for a reboot
 
+You can uninstall using::
+```bash
+curl -sSL https://raw.githubusercontent.com/EiSiMo/hid-proxy/master/uninstall.sh | sudo bash
+```
+
 ### Usage
 1. The most essential command for development is:
 
