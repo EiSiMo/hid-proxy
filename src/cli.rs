@@ -13,4 +13,8 @@ pub struct Args {
     /// Example: --target ffff:0035 or --target ffff:0035:1
     #[arg(short, long)]
     pub target: Option<String>,
+
+    /// Increase logging verbosity. Can be used multiple times (e.g., -v, -vv).
+    #[arg(short, long, action = clap::ArgAction::Count)]
+    pub verbose: u8,
 }
