@@ -1,14 +1,31 @@
 use std::fs;
 use std::process::Command;
-use std::path::Path;
+use std::path::{Path, PathBuf};
 
-/// Checks if the provided script file exists in `examples/` or the project root.
-pub fn is_script_found(script_name: &str) -> bool {
-    let example_path_str = format!("examples/{}", script_name);
-    let example_path = Path::new(&example_path_str);
-    let direct_path = Path::new(script_name);
+/// Resolves the path to a script file by checking various locations.
+///
+/// The following locations are checked in order:
+/// 1. As an absolute path.
+/// 2. Relative to the current working directory.
+/// 3. In the `examples` directory relative to the current working directory.
+/// 4. In the system-wide data directory `/usr/local/share/hid-proxy`.
+///
+/// Returns an `Option<PathBuf>` containing the absolute path to the script if found,
+/// otherwise `None`.
+pub fn resolve_script_path(script_name: &str) -> Option<PathBuf> {
+    let paths_to_check = [
+        PathBuf::from(script_name), // User-provided path (absolute or relative)
+        PathBuf::from(format!("./examples/{}", script_name)),
+        PathBuf::from(format!("/usr/local/share/hid-proxy/{}", script_name)),
+    ];
 
-    example_path.exists() || direct_path.exists()
+    for path in &paths_to_check {
+        if path.exists() {
+            return path.canonicalize().ok();
+        }
+    }
+
+    None
 }
 
 /// Checks for root privileges, exiting if not found.

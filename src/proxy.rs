@@ -4,6 +4,7 @@ use rhai::{AST, Engine, Scope};
 use rusb::{Context, DeviceHandle, UsbContext};
 use std::fs::{File, OpenOptions};
 use std::io::{Read, Write};
+use std::path::PathBuf;
 use std::sync::{Arc, Mutex};
 use std::thread;
 use std::time::Duration;
@@ -16,7 +17,7 @@ pub struct SharedState {
 
 pub fn proxy_loop(
     target_info: HIDevice,
-    script_name: Option<String>,
+    script_path: Option<PathBuf>,
 ) -> Result<(), Box<dyn std::error::Error>> {
     // 1. Setup Connection
     let context = Context::new()?;
@@ -55,8 +56,7 @@ pub fn proxy_loop(
         handle_output,
     });
 
-    // Correctly typed to match updated scripting.rs signature
-    let script_context = Arc::new(load_script_engine(script_name, Arc::clone(&shared_state)));
+    let script_context = Arc::new(load_script_engine(script_path, Arc::clone(&shared_state)));
 
     // 3. Spawn Host -> Device Worker (Thread)
     let script_context_output = Arc::clone(&script_context);

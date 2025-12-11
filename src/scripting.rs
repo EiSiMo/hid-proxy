@@ -1,43 +1,30 @@
 use rhai::{AST, Engine, Scope};
-use std::path::Path;
+use std::path::PathBuf;
 use std::sync::{Arc, Mutex};
 use crate::bindings::register_native_fns;
 use crate::proxy::SharedState;
 
-pub fn load_script_engine(script_name: Option<String>, shared_state: Arc<SharedState>) -> Option<(Engine, AST, Mutex<Scope<'static>>)> {
-    if let Some(name) = script_name {
-        let example_path_str = format!("examples/{}", name);
-        let example_path = Path::new(&example_path_str);
-        let direct_path = Path::new(&name);
+pub fn load_script_engine(script_path: Option<PathBuf>, shared_state: Arc<SharedState>) -> Option<(Engine, AST, Mutex<Scope<'static>>)> {
+    if let Some(path) = script_path {
+        println!("[*] loading script {}", path.display());
+        let mut engine = Engine::new();
 
-        let chosen_path = if example_path.exists() {
-            Some(example_path.to_path_buf())
-        } else if direct_path.exists() {
-            Some(direct_path.to_path_buf())
-        } else {
-            None
-        };
+        register_native_fns(&mut engine, Arc::clone(&shared_state));
 
-        if let Some(path) = chosen_path {
-            println!("[*] loading script {}", path.display());
-            let mut engine = Engine::new();
-
-            register_native_fns(&mut engine, Arc::clone(&shared_state));
-
-            match engine.compile_file(path) {
-                Ok(ast) => {
-                    let mut scope = Scope::new();
-                    if let Err(e) = engine.run_ast_with_scope(&mut scope, &ast) {
-                        println!("[!] script initialization error: {}", e);
-                        return None;
-                    }
-                    println!("[*] script compiled and initialized successfully.");
-                    return Some((engine, ast, Mutex::new(scope)));
+        match engine.compile_file(path) {
+            Ok(ast) => {
+                let mut scope = Scope::new();
+                if let Err(e) = engine.run_ast_with_scope(&mut scope, &ast) {
+                    println!("[!] script initialization error: {}", e);
+                    return None;
                 }
-                Err(e) => println!("[!] script compilation error: {}", e),
+                println!("[*] script compiled and initialized successfully.");
+                return Some((engine, ast, Mutex::new(scope)));
             }
-        } else {
-            println!("[!] script file '{name}' not found");
+            Err(e) => {
+                println!("[!] script compilation error: {}", e);
+                return None;
+            }
         }
     }
     None

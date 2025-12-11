@@ -10,6 +10,7 @@ use clap::Parser;
 use crate::device::HIDevice;
 use std::io::{self, Write};
 use std::time::Duration;
+use std::path::PathBuf;
 
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
@@ -21,9 +22,11 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     // --- End of Setup ---
 
     let args = cli::Args::parse();
+    let mut script_path: Option<PathBuf> = None;
 
     if let Some(ref name) = args.script {
-        if !setup::is_script_found(name) {
+        script_path = setup::resolve_script_path(name);
+        if script_path.is_none() {
             println!("[!] script file '{}' not found", name);
             std::process::exit(1);
         }
@@ -37,8 +40,8 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         std::process::exit(0);
     });
 
-    if let Some(ref name) = args.script {
-        println!("[*] using script '{}'", name);
+    if let Some(ref path) = script_path {
+        println!("[*] using script '{}'", path.display());
     } else {
         println!("[*] no active script");
     }
@@ -103,9 +106,9 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         gadget::wait_for_host_connection();
         println!("[*] beginning proxy loop");
 
-        let script_name_clone = args.script.clone();
+        let script_path_clone = script_path.clone();
         let _ = tokio::task::spawn_blocking(move || {
-            if let Err(e) = proxy::proxy_loop(device, script_name_clone) {
+            if let Err(e) = proxy::proxy_loop(device, script_path_clone) {
                 println!("[!] proxy loop ended: {}", e);
             }
         }).await;
