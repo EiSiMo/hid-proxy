@@ -71,7 +71,7 @@ rm -rf "$TEMP_DIR"
 echo "[*] installation complete"
 echo "[!] a reboot is required for the changes to take effect"
 read -p "[?] do you want to reboot now? (y/n) " -n 1 -r
-echo
+echo ""
 if [[ $REPLY =~ ^[Yy]$ ]]
 then
     reboot
