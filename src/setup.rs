@@ -8,7 +8,7 @@ use std::path::{Path, PathBuf};
 /// 1. As an absolute path.
 /// 2. Relative to the current working directory.
 /// 3. In the `examples` directory relative to the current working directory.
-/// 4. In the system-wide data directory `/usr/local/share/hid-proxy`.
+/// 4. In the system-wide data directory `/usr/local/share/hid-proxy/examples`.
 ///
 /// Returns an `Option<PathBuf>` containing the absolute path to the script if found,
 /// otherwise `None`.
@@ -16,7 +16,7 @@ pub fn resolve_script_path(script_name: &str) -> Option<PathBuf> {
     let paths_to_check = [
         PathBuf::from(script_name), // User-provided path (absolute or relative)
         PathBuf::from(format!("./examples/{}", script_name)),
-        PathBuf::from(format!("/usr/local/share/hid-proxy/{}", script_name)),
+        PathBuf::from(format!("/usr/local/share/hid-proxy/examples/{}", script_name)),
     ];
 
     for path in &paths_to_check {
