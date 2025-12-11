@@ -1,21 +1,9 @@
 use std::fs;
 use std::process::Command;
 use std::path::PathBuf;
-use tracing::error;
+use std::error::Error;
 
 /// Resolves the path to a script file by checking various locations.
-///
-/// The following locations are checked in order:
-/// 1. As an absolute path.
-/// 2. Relative to the current working directory.
-/// 3. In the `examples` directory relative to the current working directory.
-/// 4. In the system-wide data directory `/usr/local/share/hid-proxy/examples`.
-///
-/// If a given path does not exist and does not end with ".rhai", it will try
-/// appending the extension and check again.
-///
-/// Returns an `Option<PathBuf>` containing the absolute path to the script if found,
-/// otherwise `None`.
 pub fn resolve_script_path(script_name: &str) -> Option<PathBuf> {
     let check_path = |base_path: &str| -> Option<PathBuf> {
         let path = PathBuf::from(base_path);
@@ -46,73 +34,48 @@ pub fn resolve_script_path(script_name: &str) -> Option<PathBuf> {
     None
 }
 
-/// Checks for root privileges, exiting if not found.
-pub fn check_root() {
+/// Checks for root privileges.
+pub fn check_root() -> Result<(), Box<dyn Error>> {
     if unsafe { libc::geteuid() } != 0 {
-        error!("this tool requires root privileges");
-        toggle_terminal_echo(true);
-        std::process::exit(1);
+        Err("this tool requires root privileges".into())
+    } else {
+        Ok(())
     }
 }
 
 /// Checks if /boot/firmware/config.txt contains "dtoverlay=dwc2".
-/// Exits the program if the check fails.
-pub fn check_config_txt() {
-    match fs::read_to_string("/boot/firmware/config.txt") {
-        Ok(content) => {
-            if !content.lines().any(|line| line.trim().starts_with("dtoverlay=dwc2")) {
-                error!("'dtoverlay=dwc2' not found or commented out in /boot/firmware/config.txt");
-                toggle_terminal_echo(true);
-                std::process::exit(1);
-            }
-        }
-        Err(e) => {
-            error!("could not read /boot/firmware/config.txt: {}", e);
-            toggle_terminal_echo(true);
-            std::process::exit(1);
-        }
+pub fn check_config_txt() -> Result<(), Box<dyn Error>> {
+    let content = fs::read_to_string("/boot/firmware/config.txt")
+        .map_err(|e| format!("could not read /boot/firmware/config.txt: {}", e))?;
+
+    if !content.lines().any(|line| line.trim().starts_with("dtoverlay=dwc2")) {
+        Err("'dtoverlay=dwc2' not found or commented out in /boot/firmware/config.txt".into())
+    } else {
+        Ok(())
     }
 }
 
 /// Checks for the libcomposite module and an active USB Device Controller (UDC).
-/// Exits the program if checks fail.
-pub fn check_kernel_setup() {
-    // 1. Check for libcomposite module
-    match Command::new("lsmod").output() {
-        Ok(output) => {
-            let loaded_modules = String::from_utf8_lossy(&output.stdout);
-            if !loaded_modules.contains("libcomposite") {
-                error!("kernel module 'libcomposite' is not loaded.");
-                toggle_terminal_echo(true);
-                std::process::exit(1);
-            }
-        }
-        Err(e) => {
-            error!("failed to execute 'lsmod': {}", e);
-            toggle_terminal_echo(true);
-            std::process::exit(1);
-        }
+pub fn check_kernel_setup() -> Result<(), Box<dyn Error>> {
+    let output = Command::new("lsmod").output().map_err(|e| format!("failed to execute 'lsmod': {}", e))?;
+    let loaded_modules = String::from_utf8_lossy(&output.stdout);
+    if !loaded_modules.contains("libcomposite") {
+        return Err("kernel module 'libcomposite' is not loaded.".into());
     }
 
-    // 2. Check for an active UDC
     match fs::read_dir("/sys/class/udc") {
         Ok(mut entries) => {
             if entries.next().is_none() {
-                error!("no active USB Device Controller (UDC) found in /sys/class/udc/");
-                error!("info: ensure a driver like 'dwc2' is active or compiled into the kernel.");
-                toggle_terminal_echo(true);
-                std::process::exit(1);
+                Err("no active USB Device Controller (UDC) found in /sys/class/udc/. Info: ensure a driver like 'dwc2' is active or compiled into the kernel.".into())
+            } else {
+                Ok(())
             }
         }
         Err(_) => {
-            error!("UDC directory /sys/class/udc/ not found.");
-            error!("info: this tool requires a kernel with USB gadget support.");
-            toggle_terminal_echo(true);
-            std::process::exit(1);
+            Err("UDC directory /sys/class/udc/ not found. Info: this tool requires a kernel with USB gadget support.".into())
         }
     }
 }
-
 
 /// Toggles the terminal's echo setting.
 pub fn toggle_terminal_echo(enable: bool) {

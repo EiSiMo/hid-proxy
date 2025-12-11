@@ -3,12 +3,12 @@ use crate::scripting::{load_script_engine, process_payload};
 use rhai::{AST, Engine, Scope};
 use rusb::{Context, DeviceHandle, UsbContext};
 use std::fs::{File, OpenOptions};
-use std::io::{Read, Write};
+use std::io::Read;
 use std::path::PathBuf;
 use std::sync::{Arc, Mutex};
 use std::thread;
 use std::time::Duration;
-use tracing::{info, warn, debug};
+use tracing::{info, debug};
 
 pub struct SharedState {
     pub gadget_write: Mutex<File>,
@@ -19,13 +19,33 @@ pub struct SharedState {
 pub fn proxy_loop(
     target_info: HIDevice,
     script_path: Option<PathBuf>,
-) -> Result<(), Box<dyn std::error::Error>> {
+) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
     debug!(device = ?target_info, "starting proxy loop");
-    // 1. Setup Connection
+
+    let handle = setup_device_connection(&target_info)?;
+    let (gadget_read, gadget_write) = setup_gadget_files()?;
+
+    info!("bidirectional tunnel established");
+
+    let shared_state = Arc::new(SharedState {
+        gadget_write: Mutex::new(gadget_write),
+        target_info: target_info.clone(),
+        handle_output: Arc::clone(&handle),
+    });
+
+    let script_context = Arc::new(load_script_engine(script_path, Arc::clone(&shared_state)));
+
+    let script_context_output = Arc::clone(&script_context);
+    thread::spawn(move || {
+        bridge_host_to_device(gadget_read, script_context_output);
+    });
+
+    bridge_device_to_host(handle, shared_state, script_context)
+}
+
+fn setup_device_connection(target_info: &HIDevice) -> Result<Arc<DeviceHandle<Context>>, Box<dyn std::error::Error + Send + Sync>> {
     let context = Context::new()?;
-    let devices = context.devices()?;
-    let device = devices
-        .iter()
+    let device = context.devices()?.iter()
         .find(|d| d.bus_number() == target_info.bus && d.address() == target_info.address)
         .ok_or("target device vanished before proxy loop")?;
 
@@ -35,57 +55,32 @@ pub fn proxy_loop(
 
     if handle.kernel_driver_active(target_info.interface_num).unwrap_or(false) {
         debug!(iface = target_info.interface_num, "detaching kernel driver");
-        let _ = handle.detach_kernel_driver(target_info.interface_num);
+        handle.detach_kernel_driver(target_info.interface_num)?;
     }
     handle.claim_interface(target_info.interface_num)?;
     debug!(iface = target_info.interface_num, "claimed interface");
 
-    let handle = Arc::new(handle);
+    Ok(Arc::new(handle))
+}
 
-    // 2. Setup Gadget Files
+fn setup_gadget_files() -> Result<(File, File), Box<dyn std::error::Error + Send + Sync>> {
     let gadget_path = "/dev/hidg0";
     debug!(path = gadget_path, "opening gadget for writing");
-    let gadget_write = OpenOptions::new()
-        .write(true)
-        .open(gadget_path)
-        .map_err(|e| format!("failed to open {} for writing {}", gadget_path, e))?;
+    let gadget_write = OpenOptions::new().write(true).open(gadget_path)
+        .map_err(|e| format!("failed to open {} for writing: {}", gadget_path, e))?;
 
     debug!(path = gadget_path, "opening gadget for reading");
     let gadget_read = File::open(gadget_path)
-        .map_err(|e| format!("failed to open {} for reading {}", gadget_path, e))?;
+        .map_err(|e| format!("failed to open {} for reading: {}", gadget_path, e))?;
 
-    info!("bidirectional tunnel established");
-
-    let handle_output = Arc::clone(&handle);
-    let shared_state = Arc::new(SharedState {
-        gadget_write: Mutex::new(gadget_write),
-        target_info: target_info.clone(),
-        handle_output,
-    });
-
-    let script_context = Arc::new(load_script_engine(script_path, Arc::clone(&shared_state)));
-
-    // 3. Spawn Host -> Device Worker (Thread)
-    let script_context_output = Arc::clone(&script_context);
-
-    debug!("spawning host-to-device bridge");
-    thread::spawn(move || {
-        bridge_host_to_device(gadget_read, script_context_output);
-    });
-
-    // 4. Run Device -> Host Worker (Main Loop)
-    debug!("starting device-to-host bridge");
-    bridge_device_to_host(handle, shared_state, script_context)?;
-
-    Ok(())
+    Ok((gadget_read, gadget_write))
 }
 
-/// Main Loop: Reads from physical USB device and forwards to Host (Gadget)
 fn bridge_device_to_host(
     handle: Arc<DeviceHandle<Context>>,
     shared_state: Arc<SharedState>,
     script_context: Arc<Option<(Engine, AST, Mutex<Scope<'static>>)>>,
-) -> Result<(), Box<dyn std::error::Error>> {
+) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
     let mut buf = vec![0u8; shared_state.target_info.report_len as usize];
 
     loop {
@@ -93,7 +88,6 @@ fn bridge_device_to_host(
             Ok(size) if size > 0 => {
                 let data = &buf[..size];
                 debug!(len = size, ?data, "read from device (device->host)");
-                // Logic delegation to script
                 process_payload(&script_context, "IN", data);
             }
             Ok(_) => {} // Empty read
@@ -103,7 +97,6 @@ fn bridge_device_to_host(
     }
 }
 
-/// Worker: Reads from Host (GadgetFS) and writes to physical USB Device
 fn bridge_host_to_device(
     mut gadget_read: File,
     script_context: Arc<Option<(Engine, AST, Mutex<Scope<'static>>)>>,
@@ -127,28 +120,4 @@ fn bridge_host_to_device(
         }
     }
     debug!("host-to-device bridge terminated");
-}
-
-/// Low-level write helper: Handles EAGAIN (busy) and ESHUTDOWN (disconnect)
-pub(crate) fn write_to_gadget_safe(file: &mut File, data: &[u8]) -> Result<(), Box<dyn std::error::Error>> {
-    debug!(len = data.len(), ?data, "writing to gadget");
-    loop {
-        match file.write_all(data) {
-            Ok(_) => return Ok(()),
-            Err(e) => {
-                if let Some(os_err) = e.raw_os_error() {
-                    if os_err == 11 { // EAGAIN: Buffer full, retry shortly
-                        debug!("gadget busy (EAGAIN), retrying write");
-                        thread::sleep(Duration::from_millis(1));
-                        continue;
-                    }
-                    if os_err == 108 { // ESHUTDOWN: Cable pulled
-                        warn!("connection to host computer lost");
-                        return Err(format!("host disconnected: {}", e).into());
-                    }
-                }
-                return Err(format!("write failed: {}", e).into());
-            }
-        }
-    }
 }

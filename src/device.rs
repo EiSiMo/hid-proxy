@@ -35,6 +35,15 @@ pub struct HIDevice {
     pub report_descriptor: Vec<u8>,
 }
 
+impl HIDevice {
+    pub fn matches(&self, target: &str) -> bool {
+        let target_lower = target.to_lowercase();
+        let id_str = format!("{:04x}:{:04x}", self.vendor_id, self.product_id);
+        let id_iface_str = format!("{:04x}:{:04x}:{}", self.vendor_id, self.product_id, self.interface_num);
+        id_str == target_lower || id_iface_str == target_lower
+    }
+}
+
 impl fmt::Display for HIDevice {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         writeln!(f, "\n=== HID Device Info [Bus {:03} Address {:03}] ===", self.bus, self.address)?;

@@ -17,26 +17,25 @@ use std::sync::atomic::{AtomicBool, Ordering};
 use tracing::{info, error, warn, debug};
 
 #[tokio::main]
-async fn main() -> Result<(), Box<dyn std::error::Error>> {
-    logging::init()?;
+async fn main() {
+    if let Err(e) = run_proxy().await {
+        setup::toggle_terminal_echo(true);
+        error!("error: {}", e);
+        std::process::exit(1);
+    }
+}
 
+async fn run_proxy() -> Result<(), Box<dyn std::error::Error>> {
+    logging::init()?;
     debug!("initializing");
+
     setup::toggle_terminal_echo(false);
-    setup::check_root();
-    setup::check_config_txt();
-    setup::check_kernel_setup();
+    setup::check_root()?;
+    setup::check_config_txt()?;
+    setup::check_kernel_setup()?;
 
     let args = cli::Args::parse();
-    let mut script_path: Option<PathBuf> = None;
-
-    if let Some(ref name) = args.script {
-        debug!(script_name = %name, "resolving script path");
-        script_path = setup::resolve_script_path(name);
-        if script_path.is_none() {
-            error!("script file '{}' not found", name);
-            std::process::exit(1);
-        }
-    }
+    let script_path = resolve_script_path(args.script.as_deref())?;
 
     let gadget_created = Arc::new(AtomicBool::new(false));
     let gadget_created_clone = gadget_created.clone();
@@ -64,52 +63,16 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     info!("starting usb human interface device proxy");
 
     loop {
-        info!("scanning for devices");
-
-        let device = loop {
-            let candidates = device::get_connected_devices();
-            debug!(count = candidates.len(), "found candidate devices");
-
-            if candidates.is_empty() {
-                info!("awaiting hotplug");
-                device::block_till_hotplug().await;
-                tokio::time::sleep(Duration::from_millis(500)).await;
+        let device = match select_device(&args.target).await {
+            Ok(device) => device,
+            Err(e) => {
+                error!("failed to select device: {}", e);
+                if args.target.is_some() {
+                    return Ok(());
+                }
+                tokio::time::sleep(Duration::from_secs(5)).await;
                 continue;
             }
-
-            if let Some(ref target_str) = args.target {
-                let target_lower = target_str.to_lowercase();
-                debug!(target = %target_lower, "searching for target device");
-                let found = candidates.iter().find(|d| {
-                    let id_str = format!("{:04x}:{:04x}", d.vendor_id, d.product_id);
-                    let id_iface_str = format!("{:04x}:{:04x}:{}", d.vendor_id, d.product_id, d.interface_num);
-                    let match_found = id_str == target_lower || id_iface_str == target_lower;
-                    debug!(id = %id_iface_str, matched = match_found, "checking device");
-                    match_found
-                });
-
-                if let Some(d) = found {
-                    debug!(device = ?d, "target device found");
-                    break d.clone();
-                } else {
-                    error!("target device '{}' not found", target_str);
-                    setup::toggle_terminal_echo(true);
-                    std::process::exit(1);
-                }
-            }
-
-            if candidates.len() == 1 {
-                debug!("only one candidate, selecting automatically");
-                break candidates[0].clone();
-            }
-
-            if let Some(selected) = select_device_interactive(&candidates) {
-                debug!(device = ?selected, "user selected device");
-                break selected;
-            }
-
-            warn!("invalid selection, rescanning...");
-            tokio::time::sleep(Duration::from_millis(1000)).await;
         };
 
         info!("{}", device);
@@ -126,17 +89,65 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         info!("beginning proxy loop");
 
         let script_path_clone = script_path.clone();
-        let _ = tokio::task::spawn_blocking(move || {
-            if let Err(e) = proxy::proxy_loop(device, script_path_clone) {
-                warn!("proxy loop ended: {}", e);
-            }
-        }).await;
+        if let Err(e) = tokio::task::spawn_blocking(move || proxy::proxy_loop(device, script_path_clone)).await? {
+            warn!("proxy loop ended: {}", e);
+        }
 
         warn!("device removed or host disconnected");
         info!("cleaning up");
         let _ = gadget::teardown_gadget("/sys/kernel/config/usb_gadget/hid_proxy");
         gadget_created.store(false, Ordering::SeqCst);
         tokio::time::sleep(Duration::from_secs(1)).await;
+    }
+}
+
+fn resolve_script_path(script_name: Option<&str>) -> Result<Option<PathBuf>, Box<dyn std::error::Error>> {
+    if let Some(name) = script_name {
+        debug!(script_name = %name, "resolving script path");
+        let script_path = setup::resolve_script_path(name);
+        if script_path.is_none() {
+            return Err(format!("script file '{}' not found", name).into());
+        }
+        Ok(script_path)
+    } else {
+        Ok(None)
+    }
+}
+
+async fn select_device(target: &Option<String>) -> Result<HIDevice, Box<dyn std::error::Error>> {
+    loop {
+        info!("scanning for devices");
+        let candidates = device::get_connected_devices();
+        debug!(count = candidates.len(), "found candidate devices");
+
+        if candidates.is_empty() {
+            info!("awaiting hotplug");
+            device::block_till_hotplug().await;
+            tokio::time::sleep(Duration::from_millis(500)).await;
+            continue;
+        }
+
+        if let Some(target_str) = target {
+            if let Some(device) = candidates.iter().find(|d| d.matches(target_str)) {
+                debug!(device = ?device, "target device found");
+                return Ok(device.clone());
+            } else {
+                return Err(format!("target device '{}' not found", target_str).into());
+            }
+        }
+
+        if candidates.len() == 1 {
+            debug!("only one candidate, selecting automatically");
+            return Ok(candidates[0].clone());
+        }
+
+        if let Some(selected) = select_device_interactive(&candidates) {
+            debug!(device = ?selected, "user selected device");
+            return Ok(selected);
+        }
+
+        warn!("invalid selection, rescanning...");
+        tokio::time::sleep(Duration::from_millis(1000)).await;
     }
 }
 
@@ -170,10 +181,9 @@ fn select_device_interactive(candidates: &[HIDevice]) -> Option<HIDevice> {
         );
     }
 
-    print!("\n> Select device index [0-{}]: ", candidates.len() - 1);
+    print!("\n> select device index [0-{}]: ", candidates.len() - 1);
     io::stdout().flush().unwrap();
 
-    // Temporarily re-enable terminal echo for user input
     setup::toggle_terminal_echo(true);
 
     let mut input = String::new();
@@ -188,7 +198,6 @@ fn select_device_interactive(candidates: &[HIDevice]) -> Option<HIDevice> {
         None
     };
 
-    // Disable terminal echo again to hide ^C
     setup::toggle_terminal_echo(false);
 
     selection
