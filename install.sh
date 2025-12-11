@@ -5,6 +5,19 @@ if [ "$EUID" -ne 0 ]
   exit
 fi
 
+# this part is important for testing the installer using OverlayFS
+if touch /boot/firmware/config.txt 2>/dev/null; then
+    echo "[*] /boot/firmware is writable"
+else
+    echo "[!] /boot/firmware is read-only, attempting to remount..."
+    mount -o remount,rw /boot/firmware
+    if [ $? -ne 0 ]; then
+        echo "[!] Failed to remount /boot/firmware as writable. Exiting."
+        exit 1
+    fi
+fi
+
+
 echo "[*] checking config files"
 
 CONFIG_TXT="/boot/firmware/config.txt"
