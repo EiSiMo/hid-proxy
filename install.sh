@@ -54,7 +54,6 @@ echo "[*] creating temporary directory"
 TEMP_DIR=$(mktemp -d)
 
 echo "[*] downloading latest release"
-# -q makes wget quiet (no ugly print), -O specifies output file
 wget -qO "$TEMP_DIR/hid-proxy_aarch64.tar.gz" "https://github.com/EiSiMo/hid-proxy/releases/latest/download/hid-proxy_aarch64.tar.gz"
 
 echo "[*] extracting archive"
@@ -71,9 +70,13 @@ rm -rf "$TEMP_DIR"
 
 echo "[*] installation complete"
 echo "[!] a reboot is required for the changes to take effect"
-read -p "[?] do you want to reboot now? (y/n) " -n 1 -r
-echo ""
-if [[ $REPLY =~ ^[Yy]$ ]]
-then
-    reboot
+
+if read -p "[?] do you want to reboot now? (y/n) " -n 1 -r < /dev/tty; then
+    echo ""
+    if [[ $REPLY =~ ^[Yy]$ ]]; then
+        reboot
+    fi
+else
+    echo ""
+    echo "[!] No terminal detected, skipping reboot prompt."
 fi
