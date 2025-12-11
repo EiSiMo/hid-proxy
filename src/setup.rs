@@ -10,18 +10,35 @@ use std::path::{Path, PathBuf};
 /// 3. In the `examples` directory relative to the current working directory.
 /// 4. In the system-wide data directory `/usr/local/share/hid-proxy/examples`.
 ///
+/// If a given path does not exist and does not end with ".rhai", it will try
+/// appending the extension and check again.
+///
 /// Returns an `Option<PathBuf>` containing the absolute path to the script if found,
 /// otherwise `None`.
 pub fn resolve_script_path(script_name: &str) -> Option<PathBuf> {
-    let paths_to_check = [
-        PathBuf::from(script_name), // User-provided path (absolute or relative)
-        PathBuf::from(format!("./examples/{}", script_name)),
-        PathBuf::from(format!("/usr/local/share/hid-proxy/examples/{}", script_name)),
-    ];
-
-    for path in &paths_to_check {
+    let check_path = |base_path: &str| -> Option<PathBuf> {
+        let path = PathBuf::from(base_path);
         if path.exists() {
             return path.canonicalize().ok();
+        }
+        if !base_path.ends_with(".rhai") {
+            let path_with_ext = PathBuf::from(format!("{}.rhai", base_path));
+            if path_with_ext.exists() {
+                return path_with_ext.canonicalize().ok();
+            }
+        }
+        None
+    };
+
+    let paths_to_check = [
+        script_name.to_string(),
+        format!("./examples/{}", script_name),
+        format!("/usr/local/share/hid-proxy/examples/{}", script_name),
+    ];
+
+    for path_str in &paths_to_check {
+        if let Some(path) = check_path(path_str) {
+            return Some(path);
         }
     }
 
