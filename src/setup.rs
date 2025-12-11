@@ -1,6 +1,6 @@
 use std::fs;
 use std::process::Command;
-use std::path::{Path, PathBuf};
+use std::path::PathBuf;
 
 /// Resolves the path to a script file by checking various locations.
 ///
