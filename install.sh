@@ -50,10 +50,15 @@ if ! grep -q "^libcomposite" "$MODULES_FILE"; then
     echo "libcomposite" >> "$MODULES_FILE"
 fi
 
+echo "[*] loading modules"
+modprobe dwc2
+modprobe libcomposite
+
 echo "[*] creating temporary directory"
 TEMP_DIR=$(mktemp -d)
 
 echo "[*] downloading latest release"
+# Changed: Added -f (fail silently on HTTP errors) so we don't save HTML error pages as tar.gz
 curl -fsSL -o "$TEMP_DIR/hid-proxy_aarch64.tar.gz" "https://github.com/EiSiMo/hid-proxy/releases/latest/download/hid-proxy_aarch64.tar.gz" || exit 1
 
 echo "[*] extracting archive"
@@ -69,7 +74,7 @@ echo "[*] cleaning up"
 rm -rf "$TEMP_DIR"
 
 echo "[*] installation complete"
-echo "[!] a reboot is required for the changes to take effect"
+echo "[!] a reboot is required"
 
 if read -p "[?] do you want to reboot now? (y/n) " -n 1 -r < /dev/tty; then
     echo ""
