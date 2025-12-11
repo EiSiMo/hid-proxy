@@ -3,7 +3,7 @@ use std::time::{Duration, SystemTime, UNIX_EPOCH};
 use rhai::{Engine, Dynamic};
 use rusb::{Direction, Recipient, RequestType};
 use crate::proxy::{write_to_gadget_safe, SharedState};
-use tracing::warn;
+use tracing::{warn, debug};
 
 pub fn register_native_fns(engine: &mut Engine, shared_state: Arc<SharedState>) {
     engine.register_fn("get_timestamp_ms", get_timestamp_ms);
@@ -49,6 +49,7 @@ fn send_to_host<'a>(
     data: &[u8],
     shared_state: &'a SharedState,
 ) -> Result<(), Box<dyn std::error::Error + 'a>> {
+    debug!(len = data.len(), ?data, "script sending data to host (device->host)");
     let mut gadget_write = shared_state.gadget_write.lock()?;
     write_to_gadget_safe(&mut gadget_write, data)
 }
@@ -57,7 +58,9 @@ fn send_to_device(
     data: &[u8],
     shared_state: &SharedState,
 ) {
+    debug!(len = data.len(), ?data, "script sending data to device (host->device)");
     let result = if shared_state.target_info.endpoint_out.is_none() {
+        debug!("using control transfer");
         shared_state.handle_output.write_control(
             rusb::request_type(Direction::Out, RequestType::Class, Recipient::Interface),
             0x09,
@@ -67,8 +70,10 @@ fn send_to_device(
             Duration::from_millis(100),
         )
     } else {
+        let endpoint = shared_state.target_info.endpoint_out.unwrap();
+        debug!(?endpoint, "using interrupt transfer");
         shared_state.handle_output.write_interrupt(
-            shared_state.target_info.endpoint_out.unwrap(),
+            endpoint,
             data,
             Duration::from_millis(100),
         )

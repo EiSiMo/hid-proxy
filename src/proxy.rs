@@ -8,7 +8,7 @@ use std::path::PathBuf;
 use std::sync::{Arc, Mutex};
 use std::thread;
 use std::time::Duration;
-use tracing::{info, warn};
+use tracing::{info, warn, debug};
 
 pub struct SharedState {
     pub gadget_write: Mutex<File>,
@@ -20,6 +20,7 @@ pub fn proxy_loop(
     target_info: HIDevice,
     script_path: Option<PathBuf>,
 ) -> Result<(), Box<dyn std::error::Error>> {
+    debug!(device = ?target_info, "starting proxy loop");
     // 1. Setup Connection
     let context = Context::new()?;
     let devices = context.devices()?;
@@ -30,21 +31,26 @@ pub fn proxy_loop(
 
     info!("proxy loop opening device...");
     let handle = device.open()?;
+    debug!("device opened successfully");
 
     if handle.kernel_driver_active(target_info.interface_num).unwrap_or(false) {
+        debug!(iface = target_info.interface_num, "detaching kernel driver");
         let _ = handle.detach_kernel_driver(target_info.interface_num);
     }
     handle.claim_interface(target_info.interface_num)?;
+    debug!(iface = target_info.interface_num, "claimed interface");
 
     let handle = Arc::new(handle);
 
     // 2. Setup Gadget Files
     let gadget_path = "/dev/hidg0";
+    debug!(path = gadget_path, "opening gadget for writing");
     let gadget_write = OpenOptions::new()
         .write(true)
         .open(gadget_path)
         .map_err(|e| format!("failed to open {} for writing {}", gadget_path, e))?;
 
+    debug!(path = gadget_path, "opening gadget for reading");
     let gadget_read = File::open(gadget_path)
         .map_err(|e| format!("failed to open {} for reading {}", gadget_path, e))?;
 
@@ -62,11 +68,13 @@ pub fn proxy_loop(
     // 3. Spawn Host -> Device Worker (Thread)
     let script_context_output = Arc::clone(&script_context);
 
+    debug!("spawning host-to-device bridge");
     thread::spawn(move || {
         bridge_host_to_device(gadget_read, script_context_output);
     });
 
     // 4. Run Device -> Host Worker (Main Loop)
+    debug!("starting device-to-host bridge");
     bridge_device_to_host(handle, shared_state, script_context)?;
 
     Ok(())
@@ -84,7 +92,7 @@ fn bridge_device_to_host(
         match handle.read_interrupt(shared_state.target_info.endpoint_in, &mut buf, Duration::from_millis(100)) {
             Ok(size) if size > 0 => {
                 let data = &buf[..size];
-
+                debug!(len = size, ?data, "read from device (device->host)");
                 // Logic delegation to script
                 process_payload(&script_context, "IN", data);
             }
@@ -105,22 +113,32 @@ fn bridge_host_to_device(
         match gadget_read.read(&mut buf) {
             Ok(size) if size > 0 => {
                 let data = &buf[..size];
+                debug!(len = size, ?data, "read from gadget (host->device)");
                 process_payload(&script_context, "OUT", data);
             }
-            Ok(_) => {}
-            Err(_) => break, // Gadget closed
+            Ok(_) => {
+                debug!("empty read from gadget, closing bridge");
+                break;
+            }
+            Err(e) => {
+                debug!(error = %e, "error reading from gadget, closing bridge");
+                break;
+            },
         }
     }
+    debug!("host-to-device bridge terminated");
 }
 
 /// Low-level write helper: Handles EAGAIN (busy) and ESHUTDOWN (disconnect)
 pub(crate) fn write_to_gadget_safe(file: &mut File, data: &[u8]) -> Result<(), Box<dyn std::error::Error>> {
+    debug!(len = data.len(), ?data, "writing to gadget");
     loop {
         match file.write_all(data) {
             Ok(_) => return Ok(()),
             Err(e) => {
                 if let Some(os_err) = e.raw_os_error() {
                     if os_err == 11 { // EAGAIN: Buffer full, retry shortly
+                        debug!("gadget busy (EAGAIN), retrying write");
                         thread::sleep(Duration::from_millis(1));
                         continue;
                     }

@@ -12,12 +12,13 @@ use crate::device::HIDevice;
 use std::io::{self, Write};
 use std::time::Duration;
 use std::path::PathBuf;
-use tracing::{info, error, warn};
+use tracing::{info, error, warn, debug};
 
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
     logging::init()?;
 
+    debug!("initializing");
     setup::toggle_terminal_echo(false);
     setup::check_root();
     setup::check_config_txt();
@@ -27,6 +28,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let mut script_path: Option<PathBuf> = None;
 
     if let Some(ref name) = args.script {
+        debug!(script_name = %name, "resolving script path");
         script_path = setup::resolve_script_path(name);
         if script_path.is_none() {
             error!("script file '{}' not found", name);
@@ -59,6 +61,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
         let device = loop {
             let candidates = device::get_connected_devices();
+            debug!(count = candidates.len(), "found candidate devices");
 
             if candidates.is_empty() {
                 info!("awaiting hotplug");
@@ -69,13 +72,17 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
             if let Some(ref target_str) = args.target {
                 let target_lower = target_str.to_lowercase();
+                debug!(target = %target_lower, "searching for target device");
                 let found = candidates.iter().find(|d| {
                     let id_str = format!("{:04x}:{:04x}", d.vendor_id, d.product_id);
                     let id_iface_str = format!("{:04x}:{:04x}:{}", d.vendor_id, d.product_id, d.interface_num);
-                    id_str == target_lower || id_iface_str == target_lower
+                    let match_found = id_str == target_lower || id_iface_str == target_lower;
+                    debug!(id = %id_iface_str, matched = match_found, "checking device");
+                    match_found
                 });
 
                 if let Some(d) = found {
+                    debug!(device = ?d, "target device found");
                     break d.clone();
                 } else {
                     error!("target device '{}' not found", target_str);
@@ -85,10 +92,12 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             }
 
             if candidates.len() == 1 {
+                debug!("only one candidate, selecting automatically");
                 break candidates[0].clone();
             }
 
             if let Some(selected) = select_device_interactive(&candidates) {
+                debug!(device = ?selected, "user selected device");
                 break selected;
             }
 
@@ -97,6 +106,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         };
 
         info!("{}", device);
+        debug!(device = ?device, "selected device for proxying");
 
         if let Err(e) = gadget::create_gadget(&device) {
             error!("failed to create USB gadget: {}", e);
@@ -159,8 +169,11 @@ fn select_device_interactive(candidates: &[HIDevice]) -> Option<HIDevice> {
 
     let mut input = String::new();
     let selection = if io::stdin().read_line(&mut input).is_ok() {
+        debug!(input = %input.trim(), "user input received");
         input.trim().parse::<usize>().ok().and_then(|idx| {
-            candidates.get(idx).cloned()
+            let device = candidates.get(idx).cloned();
+            debug!(index = idx, "parsed selection");
+            device
         })
     } else {
         None

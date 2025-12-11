@@ -3,23 +3,26 @@ use std::path::PathBuf;
 use std::sync::{Arc, Mutex};
 use crate::bindings::register_native_fns;
 use crate::proxy::SharedState;
-use tracing::{info, warn};
+use tracing::{info, warn, debug};
 
 pub fn load_script_engine(script_path: Option<PathBuf>, shared_state: Arc<SharedState>) -> Option<(Engine, AST, Mutex<Scope<'static>>)> {
     if let Some(path) = script_path {
         info!("loading script {}", path.display());
+        debug!(path = %path.display(), "compiling script");
         let mut engine = Engine::new();
 
         register_native_fns(&mut engine, Arc::clone(&shared_state));
 
         match engine.compile_file(path) {
             Ok(ast) => {
+                debug!("script compiled successfully, creating scope");
                 let mut scope = Scope::new();
                 if let Err(e) = engine.run_ast_with_scope(&mut scope, &ast) {
                     warn!("script initialization error: {}", e);
                     return None;
                 }
                 info!("script compiled and initialized successfully.");
+                debug!("Rhai engine and scope initialized");
                 return Some((engine, ast, Mutex::new(scope)));
             }
             Err(e) => {
@@ -28,6 +31,7 @@ pub fn load_script_engine(script_path: Option<PathBuf>, shared_state: Arc<Shared
             }
         }
     }
+    debug!("no script path provided, scripting disabled");
     None
 }
 
@@ -35,8 +39,9 @@ pub fn process_payload(
     engine_opt: &Option<(Engine, AST, Mutex<Scope<'static>>)>,
     direction: &str,
     data: &[u8],
-) -> Vec<u8> {
+) {
     if let Some((engine, ast, scope_mutex)) = engine_opt {
+        debug!(?direction, len = data.len(), ?data, "calling 'process' hook in script");
         let blob: Vec<rhai::Dynamic> = data.iter().map(|&b| (b as i64).into()).collect();
 
         if let Ok(mut scope) = scope_mutex.lock() {
@@ -48,5 +53,6 @@ pub fn process_payload(
             }
         }
     }
-    data.to_vec()
+    // Note: The script is responsible for forwarding the data.
+    // This function does not return the (potentially modified) payload.
 }
