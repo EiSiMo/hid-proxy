@@ -1,5 +1,5 @@
 <p align="center">
-  <img src="images/logo.png" alt="hid-proxy Logo" width="150">
+  <img src="images/logo_v2.png" alt="hid-proxy Logo" width="150">
 </p>
 <h1 align="center">hid-proxy</h1>
 
