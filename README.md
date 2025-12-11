@@ -85,3 +85,18 @@ fn process_data(direction, data) {
     send_to(direction, data);
 }
 ```
+
+## 🔧 Troubleshooting
+
+If the application behaves unexpectedly or crashes, you can view the detailed system logs. These contain timestamps and debug information not shown in the standard console output.
+
+**To view the last 50 log entries:**
+```bash
+sudo journalctl -t hid-proxy -n 50
+```
+(Note: If running as a systemd service, use `-u hid-proxy` instead of `-t hid-proxy`)
+
+**To follow the logs in real-time:**
+```bash
+sudo journalctl -t hid-proxy -f
+```

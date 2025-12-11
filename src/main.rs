@@ -5,15 +5,19 @@ mod proxy;
 mod scripting;
 mod setup;
 mod bindings;
+mod logging;
 
 use clap::Parser;
 use crate::device::HIDevice;
 use std::io::{self, Write};
 use std::time::Duration;
 use std::path::PathBuf;
+use tracing::{info, error, warn};
 
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
+    logging::init()?;
+
     setup::toggle_terminal_echo(false);
     setup::check_root();
     setup::check_config_txt();
@@ -25,7 +29,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     if let Some(ref name) = args.script {
         script_path = setup::resolve_script_path(name);
         if script_path.is_none() {
-            println!("[!] script file '{}' not found", name);
+            error!("script file '{}' not found", name);
             std::process::exit(1);
         }
     }
@@ -33,31 +37,31 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     tokio::spawn(async move {
         tokio::signal::ctrl_c().await.unwrap();
         setup::toggle_terminal_echo(true);
-        println!("\r[*] CTRL+C detected, cleaning up");
+        info!("\rCTRL+C detected, cleaning up");
         gadget::cleanup_gadget_emergency();
         std::process::exit(0);
     });
 
     if let Some(ref path) = script_path {
-        println!("[*] using script '{}'", path.display());
+        info!("using script '{}'", path.display());
     } else {
-        println!("[*] no active script");
+        info!("no active script");
     }
 
     if let Some(ref target) = args.target {
-        println!("[*] auto-targeting device matching '{}'", target);
+        info!("auto-targeting device matching '{}'", target);
     }
 
-    println!("[*] starting usb human interface device proxy");
+    info!("starting usb human interface device proxy");
 
     loop {
-        println!("[*] scanning for devices");
+        info!("scanning for devices");
 
         let device = loop {
             let candidates = device::get_connected_devices();
 
             if candidates.is_empty() {
-                println!("[*] awaiting hotplug");
+                info!("awaiting hotplug");
                 device::block_till_hotplug().await;
                 tokio::time::sleep(Duration::from_millis(500)).await;
                 continue;
@@ -74,7 +78,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                 if let Some(d) = found {
                     break d.clone();
                 } else {
-                    println!("[!] target device '{}' not found", target_str);
+                    error!("target device '{}' not found", target_str);
                     setup::toggle_terminal_echo(true);
                     std::process::exit(1);
                 }
@@ -88,37 +92,37 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                 break selected;
             }
 
-            println!("[!] invalid selection, rescanning...");
+            warn!("invalid selection, rescanning...");
             tokio::time::sleep(Duration::from_millis(1000)).await;
         };
 
-        println!("{}", device);
+        info!("{}", device);
 
         if let Err(e) = gadget::create_gadget(&device) {
-            println!("[!] failed to create USB gadget: {}", e);
+            error!("failed to create USB gadget: {}", e);
             tokio::time::sleep(Duration::from_secs(5)).await;
             continue;
         }
 
         gadget::wait_for_host_connection();
-        println!("[*] beginning proxy loop");
+        info!("beginning proxy loop");
 
         let script_path_clone = script_path.clone();
         let _ = tokio::task::spawn_blocking(move || {
             if let Err(e) = proxy::proxy_loop(device, script_path_clone) {
-                println!("[!] proxy loop ended: {}", e);
+                warn!("proxy loop ended: {}", e);
             }
         }).await;
 
-        println!("[!] device removed or host disconnected");
-        println!("[*] cleaning up");
+        warn!("device removed or host disconnected");
+        info!("cleaning up");
         let _ = gadget::teardown_gadget("/sys/kernel/config/usb_gadget/hid_proxy");
         tokio::time::sleep(Duration::from_secs(1)).await;
     }
 }
 
 fn select_device_interactive(candidates: &[HIDevice]) -> Option<HIDevice> {
-    println!("[!] found {} devices/interfaces. Please select one:", candidates.len());
+    println!("found {} devices/interfaces. Please select one:", candidates.len());
     println!(
         "{:<5} | {:<13} | {:<10} | {:<8} | {:<16} | {}",
         "IDX", "ID", "BUS:ADDR", "IFACE", "PROTO", "PRODUCT"

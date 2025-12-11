@@ -5,6 +5,7 @@ use std::os::unix::fs::symlink;
 use std::path::Path;
 use std::thread;
 use std::time::Duration;
+use tracing::{info, warn};
 
 pub fn wait_for_host_connection() {
     let udc_name = find_udc_controller().unwrap();
@@ -15,11 +16,11 @@ pub fn wait_for_host_connection() {
         thread::sleep(Duration::from_millis(500));
         if let Ok(state) = fs::read_to_string(&state_path) {
             if state.trim() == "configured" {
-                println!("[+] host computer connected");
+                info!("host computer connected");
                 break;
             } else {
                 if !plug_host_warning_sent {
-                    println!("[!] awaiting connection to host computer");
+                    warn!("awaiting connection to host computer");
                     plug_host_warning_sent = true;
                 }
             }
@@ -35,7 +36,7 @@ pub fn create_gadget(device: &HIDevice) -> Result<(), Box<dyn std::error::Error>
 
     let _ = teardown_gadget(&base_path);
 
-    println!("[*] configuring GadgetFS");
+    info!("configuring GadgetFS");
     fs::create_dir_all(&base_path)?;
     write_file(&base_path, "idVendor", &format!("0x{:04x}", device.vendor_id))?;
     write_file(&base_path, "idProduct", &format!("0x{:04x}", device.product_id))?;
@@ -72,7 +73,7 @@ pub fn create_gadget(device: &HIDevice) -> Result<(), Box<dyn std::error::Error>
     let udc_name = find_udc_controller()?;
     write_file(&base_path, "UDC", &udc_name)?;
 
-    println!("[*] gadget created and bound to UDC: {}", udc_name);
+    info!("gadget created and bound to UDC: {}", udc_name);
     Ok(())
 }
 
@@ -103,7 +104,7 @@ pub fn find_udc_controller() -> Result<String, Box<dyn std::error::Error>> {
             return Ok(name);
         }
     }
-    Err("[-] no UDC controller found in /sys/class/udc".into())
+    Err("no UDC controller found in /sys/class/udc".into())
 }
 
 // Emergency cleanup helper exposed for main
@@ -113,7 +114,7 @@ pub fn cleanup_gadget_emergency() {
         let _ = file.write_all(&zeros);
         let _ = file.flush();
     } else {
-        println!("[!] could not open gadget for cleanup");
+        warn!("could not open gadget for cleanup");
     }
     let _ = teardown_gadget("/sys/kernel/config/usb_gadget/hid_proxy");
 }

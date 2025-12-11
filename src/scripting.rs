@@ -3,10 +3,11 @@ use std::path::PathBuf;
 use std::sync::{Arc, Mutex};
 use crate::bindings::register_native_fns;
 use crate::proxy::SharedState;
+use tracing::{info, warn};
 
 pub fn load_script_engine(script_path: Option<PathBuf>, shared_state: Arc<SharedState>) -> Option<(Engine, AST, Mutex<Scope<'static>>)> {
     if let Some(path) = script_path {
-        println!("[*] loading script {}", path.display());
+        info!("loading script {}", path.display());
         let mut engine = Engine::new();
 
         register_native_fns(&mut engine, Arc::clone(&shared_state));
@@ -15,14 +16,14 @@ pub fn load_script_engine(script_path: Option<PathBuf>, shared_state: Arc<Shared
             Ok(ast) => {
                 let mut scope = Scope::new();
                 if let Err(e) = engine.run_ast_with_scope(&mut scope, &ast) {
-                    println!("[!] script initialization error: {}", e);
+                    warn!("script initialization error: {}", e);
                     return None;
                 }
-                println!("[*] script compiled and initialized successfully.");
+                info!("script compiled and initialized successfully.");
                 return Some((engine, ast, Mutex::new(scope)));
             }
             Err(e) => {
-                println!("[!] script compilation error: {}", e);
+                warn!("script compilation error: {}", e);
                 return None;
             }
         }
@@ -43,7 +44,7 @@ pub fn process_payload(
                 engine.call_fn(&mut *scope, ast, "process", (direction.to_string(), blob));
 
             if let Err(e) = result {
-                println!("[!] error while executing rhai script: {e}");
+                warn!("error while executing rhai script: {e}");
             }
         }
     }

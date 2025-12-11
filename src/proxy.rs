@@ -8,6 +8,7 @@ use std::path::PathBuf;
 use std::sync::{Arc, Mutex};
 use std::thread;
 use std::time::Duration;
+use tracing::{info, warn};
 
 pub struct SharedState {
     pub gadget_write: Mutex<File>,
@@ -27,7 +28,7 @@ pub fn proxy_loop(
         .find(|d| d.bus_number() == target_info.bus && d.address() == target_info.address)
         .ok_or("target device vanished before proxy loop")?;
 
-    println!("[*] proxy loop opening device...");
+    info!("proxy loop opening device...");
     let handle = device.open()?;
 
     if handle.kernel_driver_active(target_info.interface_num).unwrap_or(false) {
@@ -42,12 +43,12 @@ pub fn proxy_loop(
     let gadget_write = OpenOptions::new()
         .write(true)
         .open(gadget_path)
-        .map_err(|e| format!("[-] failed to open {} for writing {}", gadget_path, e))?;
+        .map_err(|e| format!("failed to open {} for writing {}", gadget_path, e))?;
 
     let gadget_read = File::open(gadget_path)
-        .map_err(|e| format!("[-] failed to open {} for reading {}", gadget_path, e))?;
+        .map_err(|e| format!("failed to open {} for reading {}", gadget_path, e))?;
 
-    println!("[*] bidirectional tunnel established");
+    info!("bidirectional tunnel established");
 
     let handle_output = Arc::clone(&handle);
     let shared_state = Arc::new(SharedState {
@@ -89,7 +90,7 @@ fn bridge_device_to_host(
             }
             Ok(_) => {} // Empty read
             Err(rusb::Error::Timeout) => continue,
-            Err(e) => return Err(format!("[!] read from USB failed: {}", e).into()),
+            Err(e) => return Err(format!("read from USB failed: {}", e).into()),
         }
     }
 }
@@ -124,8 +125,8 @@ pub(crate) fn write_to_gadget_safe(file: &mut File, data: &[u8]) -> Result<(), B
                         continue;
                     }
                     if os_err == 108 { // ESHUTDOWN: Cable pulled
-                        println!("\n[!] connection to host computer lost");
-                        return Err(format!("[!] host disconnected: {}", e).into());
+                        warn!("connection to host computer lost");
+                        return Err(format!("host disconnected: {}", e).into());
                     }
                 }
                 return Err(format!("write failed: {}", e).into());
