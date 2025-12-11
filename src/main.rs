@@ -12,6 +12,8 @@ use crate::device::HIDevice;
 use std::io::{self, Write};
 use std::time::Duration;
 use std::path::PathBuf;
+use std::sync::Arc;
+use std::sync::atomic::{AtomicBool, Ordering};
 use tracing::{info, error, warn, debug};
 
 #[tokio::main]
@@ -36,11 +38,16 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         }
     }
 
+    let gadget_created = Arc::new(AtomicBool::new(false));
+    let gadget_created_clone = gadget_created.clone();
+
     tokio::spawn(async move {
         tokio::signal::ctrl_c().await.unwrap();
         setup::toggle_terminal_echo(true);
         info!("\rCTRL+C detected, cleaning up");
-        gadget::cleanup_gadget_emergency();
+        if gadget_created_clone.load(Ordering::SeqCst) {
+            gadget::cleanup_gadget_emergency();
+        }
         std::process::exit(0);
     });
 
@@ -113,6 +120,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             tokio::time::sleep(Duration::from_secs(5)).await;
             continue;
         }
+        gadget_created.store(true, Ordering::SeqCst);
 
         gadget::wait_for_host_connection();
         info!("beginning proxy loop");
@@ -127,6 +135,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         warn!("device removed or host disconnected");
         info!("cleaning up");
         let _ = gadget::teardown_gadget("/sys/kernel/config/usb_gadget/hid_proxy");
+        gadget_created.store(false, Ordering::SeqCst);
         tokio::time::sleep(Duration::from_secs(1)).await;
     }
 }
