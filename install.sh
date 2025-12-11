@@ -54,7 +54,7 @@ echo "[*] creating temporary directory"
 TEMP_DIR=$(mktemp -d)
 
 echo "[*] downloading latest release"
-curl -L -o "$TEMP_DIR/hid-proxy_aarch64.tar.gz" "https://github.com/EiSiMo/hid-proxy/releases/latest/download/hid-proxy_aarch64.tar.gz"
+wget -O "$TEMP_DIR/hid-proxy_aarch64.tar.gz" "https://github.com/EiSiMo/hid-proxy/releases/latest/download/hid-proxy_aarch64.tar.gz"
 
 echo "[*] extracting archive"
 tar -xzf "$TEMP_DIR/hid-proxy_aarch64.tar.gz" -C "$TEMP_DIR"
