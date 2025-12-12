@@ -59,7 +59,7 @@ curl -sSL https://raw.githubusercontent.com/EiSiMo/hid-proxy/master/uninstall.sh
 ```
 
 ### Usage
-1. The most essential command for development is:
+1. The most essential command for development and testing is:
 
     ```bash
     sudo hid-proxy -s monitor
