@@ -1,24 +1,25 @@
 // space_to_click.rhai
-// This script creates a virtual mouse and triggers a left click whenever the Spacebar is pressed.
-// The original Spacebar input is preserved (sent to host).
+// this script creates a virtual mouse and triggers a left click whenever
+// the spacebar is pressed on the physical keyboard.
 
-let VIRTUAL_MOUSE = ();
-let WAS_SPACE_PRESSED = false;
+// this was only tested on the "Logitech MX Keys S (GERMAN)" and your model might require tweaking the script
+
+// global variables to hold state
+let virtual_mouse = ();
+let was_space_pressed = false;
 
 fn init() {
-    // Create the virtual mouse device
-    VIRTUAL_MOUSE = create_virtual_mouse();
-    print("Virtual mouse created. Press Space to click!");
+    virtual_mouse = create_virtual_mouse();
+    print("virtual mouse created. press space to click!");
 }
 
 fn process(interface, direction, data) {
-    // Check if we are receiving data from the physical keyboard
+    // only process input coming from the physical keyboard
     if direction == "IN" && interface.is_keyboard() {
         let is_space_pressed = false;
 
-        // Standard HID report has keycodes in bytes 2-7
-        // Spacebar usage ID is 0x2c (44)
-        // We iterate through the key slots to see if Space is currently held
+        // standard hid reports store keycodes in bytes 2 to 7.
+        // we check these bytes to see if the spacebar (keycode 0x2c) is held down.
         for i in 2..8 {
             if i < data.len() && data[i] == 0x2c {
                 is_space_pressed = true;
@@ -26,22 +27,23 @@ fn process(interface, direction, data) {
             }
         }
 
-        // Trigger only on the rising edge (when space is first pressed)
-        if is_space_pressed && !WAS_SPACE_PRESSED {
-            print("Spacebar pressed! Clicking virtual mouse.");
+        // trigger action only when the key is freshly pressed (rising edge)
+        // to avoid rapid-fire clicking while holding the key.
+        if is_space_pressed && !was_space_pressed {
+            print("spacebar pressed! clicking virtual mouse.");
 
-            // Send Left Click (Button 1)
-            // Report: [Buttons, X, Y, Wheel]
-            VIRTUAL_MOUSE.send_report([0x01, 0, 0, 0]);
+            // send left click (button 1)
+            // report format: [buttons, x, y, wheel]
+            virtual_mouse.send_report([0x01, 0, 0, 0]);
 
-            // Release the click immediately
-            VIRTUAL_MOUSE.send_report([0x00, 0, 0, 0]);
+            // release the click immediately
+            virtual_mouse.send_report([0x00, 0, 0, 0]);
         }
 
-        // Update state for next pass
-        WAS_SPACE_PRESSED = is_space_pressed;
+        // save state for the next cycle
+        was_space_pressed = is_space_pressed;
     }
 
-    // Forward the original data to the host
+    // forward the original keyboard data to the host pc
     interface.send_to(direction, data);
 }
