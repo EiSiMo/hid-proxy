@@ -5,7 +5,9 @@ use crate::bindings::{self, Interface};
 use crate::proxy::GlobalState;
 use tracing::{info, warn, debug};
 
-pub fn load_script_engine(script_path: Option<PathBuf>, shared_state: Arc<GlobalState>) -> Option<(Engine, AST, Mutex<Scope<'static>>)> {
+pub type ScriptContext = Option<(Engine, AST, Mutex<Scope<'static>>)>;
+
+pub fn load_script_engine(script_path: Option<PathBuf>, shared_state: Arc<GlobalState>) -> ScriptContext {
     if let Some(path) = script_path {
         info!("loading script {}", path.display());
         debug!(path = %path.display(), "compiling script");
@@ -24,7 +26,6 @@ pub fn load_script_engine(script_path: Option<PathBuf>, shared_state: Arc<Global
                 debug!("initializing script globals");
                 if let Err(e) = engine.run_ast_with_scope(&mut scope, &ast) {
                     warn!("error initializing script globals: {}", e);
-                    // We continue even if there's an error, though the script might fail later
                 }
 
                 info!("script compiled and scope created.");
@@ -41,7 +42,7 @@ pub fn load_script_engine(script_path: Option<PathBuf>, shared_state: Arc<Global
 }
 
 pub fn process_payload(
-    engine_opt: &Arc<Option<(Engine, AST, Mutex<Scope<'static>>)>>,
+    engine_opt: &Arc<ScriptContext>,
     interface: Interface,
     direction: &str,
     data: &[u8],
@@ -55,7 +56,22 @@ pub fn process_payload(
                 engine.call_fn(&mut *scope, ast, "process", (interface, direction.to_string(), blob));
 
             if let Err(e) = result {
-                warn!("error while executing rhai script: {e}");
+                if !e.to_string().contains("Function not found") {
+                    warn!("error while executing rhai process() hook: {e}");
+                }
+            }
+        }
+    }
+}
+
+pub fn tick(engine_opt: &Arc<ScriptContext>) {
+    if let Some((engine, ast, scope_mutex)) = engine_opt.as_ref() {
+        if let Ok(mut scope) = scope_mutex.lock() {
+            let result: Result<(), _> = engine.call_fn(&mut *scope, ast, "tick", ());
+            if let Err(e) = result {
+                if !e.to_string().contains("Function not found") {
+                    warn!("error while executing rhai tick() hook: {e}");
+                }
             }
         }
     }

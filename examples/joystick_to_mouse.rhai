@@ -1,50 +1,59 @@
 // joystick_to_mouse.rhai
-// this script creates a virtual mouse and moves it based on joystick input.
+// Creates a virtual mouse and translates joystick movements into continuous mouse movement.
 
+// --- Global State ---
 let virtual_mouse = ();
+let joystick_x = 128; // Neutral position
+let joystick_y = 128; // Neutral position
+let joystick_buttons = 0;
+let joystick_hat = 0x80; // Neutral position
 
 fn init() {
-    // create a virtual mouse device
     virtual_mouse = create_virtual_mouse();
-    print("virtual mouse created. move the joystick to move the mouse.");
+    print("virtual mouse created. move the joystick to control the mouse.");
 }
 
+// process() is called on every incoming HID report.
+// Its only job is to update the global state variables. It should be fast and non-blocking.
 fn process(interface, direction, data) {
-    // only process input from the physical joystick
-    // The device ID 045e:0038 is for "Microsoft SideWinder Precision 2 Joystick"
+    // Check if the report is from our target joystick
     if direction == "IN" && device.vendor_id == 0x045e && device.product_id == 0x0038 {
-
-        // The joystick data is at least 6 bytes long.
-        // Byte 0: x-axis, Byte 1: y-axis
-        // Byte 4: buttons (0x01=Left, 0x02=Right)
-        // Byte 5: hat switch (0x00=Up, 0x40=Down, 0x80=Neutral)
         if data.len() >= 6 {
-            let x = data[0];
-            let y = data[1];
-            let buttons = data[4];
-            let hat = data[5];
-
-            // convert joystick position to mouse speed
-            const SPEED_FACTOR = 5.0;
-            let dx = ((x - 128) / SPEED_FACTOR).to_int();
-            let dy = ((y - 128) / SPEED_FACTOR).to_int();
-
-            // map joystick buttons to mouse buttons
-            let mouse_buttons = buttons & 0x03;
-
-            // map hat switch to scroll wheel
-            let wheel = 0;
-            if hat == 0x00 {
-                wheel = 1; // scroll up
-            } else if hat == 0x40 {
-                wheel = -1; // scroll down
-            }
-
-            // report format: [buttons, x, y, wheel]
-            virtual_mouse.send_report([mouse_buttons, dx, dy, wheel]);
+            joystick_x = data[0];
+            joystick_y = data[1];
+            joystick_buttons = data[4];
+            joystick_hat = data[5];
         }
+        // We do not forward the original report, as we are replacing its functionality.
+    } else if direction == "IN" {
+        // Forward reports from other devices
+        interface.send_to(direction, data);
+    }
+}
+
+// tick() is called at a fixed rate (e.g., 100 times per second).
+// It reads the global state and performs continuous actions.
+fn tick() {
+    // --- Mouse Movement ---
+    const SPEED_FACTOR = 20.0;
+    let dx = ((joystick_x - 128) / SPEED_FACTOR).to_int();
+    let dy = ((joystick_y - 128) / SPEED_FACTOR).to_int();
+
+    // --- Mouse Buttons ---
+    // Joystick: 0x01 = Button 1, 0x02 = Button 2
+    // Mouse: 0x01 = Left, 0x02 = Right
+    let mouse_buttons = joystick_buttons & 0x03;
+
+    // --- Scroll Wheel ---
+    // Hat switch: 0x00=Up, 0x40=Down
+    let wheel = 0;
+    if joystick_hat == 0x00 {
+        wheel = 1; // scroll up
+    } else if joystick_hat == 0x40 {
+        wheel = -1; // scroll down
     }
 
-    // not sending the original joystick data, in case anything supports it it does not overwrite mouse movements
-    // interface.send_to(direction, data);
+    // Send the final report to the virtual mouse.
+    // A report is sent on every tick, ensuring continuous movement.
+    virtual_mouse.send_report([mouse_buttons, dx, dy, wheel]);
 }

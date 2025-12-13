@@ -19,8 +19,12 @@ use std::sync::{Arc, Mutex};
 use std::sync::atomic::{AtomicBool, Ordering};
 use futures::future::join_all;
 use rusb::{Context, DeviceHandle, UsbContext};
+use tokio::time;
 use tracing::{info, error, warn, debug};
 use crate::proxy::GlobalState;
+use crate::scripting::ScriptContext;
+
+const TICK_RATE_HZ: u64 = 100;
 
 #[tokio::main]
 async fn main() {
@@ -110,8 +114,9 @@ async fn run_proxy() -> Result<(), Box<dyn std::error::Error>> {
         });
 
         let script_context = scripting::load_script_engine(script_path.clone(), global_state.clone());
+        let script_context_arc = Arc::new(script_context);
 
-        if let Some((engine, ast, scope_mutex)) = &script_context {
+        if let Some((engine, ast, scope_mutex)) = script_context_arc.as_ref() {
             let mut scope = scope_mutex.lock().unwrap();
             if let Err(e) = engine.call_fn::<()>(&mut scope, &ast, "init", ()) {
                 if !e.to_string().contains("Function not found") {
@@ -149,9 +154,21 @@ async fn run_proxy() -> Result<(), Box<dyn std::error::Error>> {
 
         *global_state.gadget_writers.lock().unwrap() = gadget_writers;
 
+        // --- Start Script Tick Loop ---
+        let script_tick_context = script_context_arc.clone();
+        tokio::spawn(async move {
+            if script_tick_context.is_some() {
+                info!("starting script tick loop at {} Hz", TICK_RATE_HZ);
+                let mut interval = time::interval(Duration::from_millis(1000 / TICK_RATE_HZ));
+                loop {
+                    interval.tick().await;
+                    scripting::tick(&script_tick_context);
+                }
+            }
+        });
+
         info!("beginning proxy loop for {} physical interfaces", device.interfaces.len());
         let mut proxy_tasks = Vec::new();
-        let script_context_arc = Arc::new(script_context);
 
         for (i, interface) in device.interfaces.iter().enumerate() {
             let interface_clone = interface.clone();
