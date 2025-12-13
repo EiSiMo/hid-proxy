@@ -3,7 +3,6 @@
 //
 // this was only tested on the "Logitech MX Keys S (GERMAN)" and your model might require tweaking the script
 
-fn init() {}
 
 fn process(interface, direction, data) {
     // direction == "IN" makes sure data is coming from the keyboard not from the computer

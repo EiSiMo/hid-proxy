@@ -23,7 +23,6 @@ while i < SAMPLES {
     i += 1;
 }
 
-fn init() {}
 
 fn process(interface, direction, data) {
     // only process input data (direction "IN") from a mouse

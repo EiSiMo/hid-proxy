@@ -2,8 +2,6 @@
 // this script simply logs all traffic passing through the proxy.
 // use this to analyze your device protocol and see which bytes change when you press a button.
 
-fn init() {}
-
 fn to_hex_string(data) {
     let result = "";
     for byte in data {

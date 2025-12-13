@@ -3,8 +3,6 @@
 // This is the fallback if no --script [SCRIPT] flag is set.
 // DO NOT DELETE THIS FILE!
 
-fn init() {}
-
 fn process(interface, direction, data) {
     // Forward the data to its original destination.
     // For a physical device interface, send_to() is used.

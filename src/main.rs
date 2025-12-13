@@ -118,9 +118,10 @@ async fn run_proxy() -> Result<(), Box<dyn std::error::Error>> {
 
         if let Some((engine, ast, scope_mutex)) = script_context_arc.as_ref() {
             let mut scope = scope_mutex.lock().unwrap();
-            if let Err(e) = engine.call_fn::<()>(&mut scope, &ast, "init", ()) {
+            let result: Result<(), _> = engine.call_fn(&mut *scope, &ast, "init", ());
+            if let Err(e) = result {
                 if !e.to_string().contains("Function not found") {
-                    warn!("error during script init() execution: {}", e);
+                    warn!("error while executing rhai init() hook: {e}");
                 }
             }
         }

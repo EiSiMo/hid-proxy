@@ -8,7 +8,6 @@
 // it returns the current system time in milliseconds.
 let last_press_time = get_timestamp_ms();
 
-fn init() {}
 
 fn process(interface, direction, data) {
     // filter for input from the keyboard

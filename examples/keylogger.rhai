@@ -5,7 +5,6 @@
 //
 // this was only tested on the "Logitech MX Keys S (GERMAN)" and your model might require tweaking the script
 
-fn init() {}
 
 fn process(interface, direction, data) {
     // only process input data (direction "IN") from a keyboard

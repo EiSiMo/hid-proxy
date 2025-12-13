@@ -4,7 +4,6 @@
 //
 // this was only tested on the "Amazon Basics Mouse" and your model might require tweaking the script
 
-fn init() {}
 
 fn process(interface, direction, data) {
     // only process input data from the mouse (direction "IN")
