@@ -33,9 +33,7 @@ let start_time = 0;          // Timestamp of the initial click
 let bullets_fired = 1;       // Counter for shots fired (starts at 1 to match old script)
 let is_left_button_pressed = false;
 
-fn init() {
-    print("no-recoil script loaded. hold left-click to activate.");
-}
+fn init() {}
 
 // process() updates the state based on incoming mouse reports.
 fn process(interface, direction, data) {

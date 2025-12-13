@@ -10,7 +10,6 @@ let joystick_hat = 0x80; // Neutral position
 
 fn init() {
     virtual_mouse = create_virtual_mouse();
-    print("virtual mouse created. move the joystick to control the mouse.");
 }
 
 // process() is called on every incoming HID report.
