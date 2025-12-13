@@ -8,13 +8,14 @@ mod bindings;
 mod logging;
 
 use clap::Parser;
-use crate::device::HIDevice;
+use crate::device::CompoundHIDevice;
 use std::io::{self, Write};
 use std::time::Duration;
 use std::path::PathBuf;
 use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, Ordering};
 use tracing::{info, error, warn, debug};
+use futures::future::join_all;
 
 #[tokio::main]
 async fn main() {
@@ -63,10 +64,15 @@ async fn run_proxy() -> Result<(), Box<dyn std::error::Error>> {
     info!("starting usb human interface device proxy");
 
     loop {
-        let device = match select_device(&args.target).await {
-            Ok(device) => device,
+        let device = match select_device(args.target.as_deref()).await {
+            Ok(Some(device)) => device,
+            Ok(None) => {
+                info!("no device selected, rescanning");
+                tokio::time::sleep(Duration::from_secs(1)).await;
+                continue;
+            }
             Err(e) => {
-                error!("failed to select device: {}", e);
+                error!("failed to select a device: {}", e);
                 if args.target.is_some() {
                     return Ok(());
                 }
@@ -86,11 +92,25 @@ async fn run_proxy() -> Result<(), Box<dyn std::error::Error>> {
         gadget_created.store(true, Ordering::SeqCst);
 
         gadget::wait_for_host_connection();
-        info!("beginning proxy loop");
+        info!("beginning proxy loop for {} interfaces", device.interfaces.len());
 
-        let script_path_clone = script_path.clone();
-        if let Err(e) = tokio::task::spawn_blocking(move || proxy::proxy_loop(device, script_path_clone)).await? {
-            warn!("proxy loop ended: {}", e);
+        let mut proxy_tasks = Vec::new();
+        for (i, interface) in device.interfaces.iter().enumerate() {
+            let script_path_clone = script_path.clone();
+            let interface_clone = interface.clone();
+            let task = tokio::task::spawn_blocking(move || {
+                proxy::proxy_loop(interface_clone, script_path_clone, i)
+            });
+            proxy_tasks.push(task);
+        }
+
+        let results = join_all(proxy_tasks).await;
+        for result in results {
+            match result {
+                Ok(Err(e)) => warn!("proxy loop ended: {}", e),
+                Err(e) => error!("proxy task failed to execute: {}", e),
+                _ => {}
+            }
         }
 
         warn!("device removed or host disconnected");
@@ -114,7 +134,7 @@ fn resolve_script_path(script_name: Option<&str>) -> Result<Option<PathBuf>, Box
     }
 }
 
-async fn select_device(target: &Option<String>) -> Result<HIDevice, Box<dyn std::error::Error>> {
+async fn select_device(target: Option<&str>) -> Result<Option<CompoundHIDevice>, Box<dyn std::error::Error>> {
     loop {
         info!("scanning for devices");
         let candidates = device::get_connected_devices();
@@ -130,7 +150,7 @@ async fn select_device(target: &Option<String>) -> Result<HIDevice, Box<dyn std:
         if let Some(target_str) = target {
             if let Some(device) = candidates.iter().find(|d| d.matches(target_str)) {
                 debug!(device = ?device, "target device found");
-                return Ok(device.clone());
+                return Ok(Some(device.clone()));
             } else {
                 return Err(format!("target device '{}' not found", target_str).into());
             }
@@ -138,12 +158,12 @@ async fn select_device(target: &Option<String>) -> Result<HIDevice, Box<dyn std:
 
         if candidates.len() == 1 {
             debug!("only one candidate, selecting automatically");
-            return Ok(candidates[0].clone());
+            return Ok(Some(candidates[0].clone()));
         }
 
         if let Some(selected) = select_device_interactive(&candidates) {
             debug!(device = ?selected, "user selected device");
-            return Ok(selected);
+            return Ok(Some(selected));
         }
 
         warn!("invalid selection, rescanning...");
@@ -151,37 +171,28 @@ async fn select_device(target: &Option<String>) -> Result<HIDevice, Box<dyn std:
     }
 }
 
-fn select_device_interactive(candidates: &[HIDevice]) -> Option<HIDevice> {
-    println!("found {} devices/interfaces. Please select one:", candidates.len());
+fn select_device_interactive(candidates: &[CompoundHIDevice]) -> Option<CompoundHIDevice> {
+    println!("found {} devices. Please select one:", candidates.len());
     println!(
-        "{:<5} | {:<13} | {:<10} | {:<8} | {:<16} | {}",
-        "IDX", "ID", "BUS:ADDR", "IFACE", "PROTO", "PRODUCT"
+        "{:<5} | {:<13} | {:<10} | {:<10} | {}",
+        "IDX", "ID", "BUS:ADDR", "INTERFACES", "PRODUCT"
     );
-    println!("{:-<5}-+-{:-<13}-+-{:-<10}-+-{:-<8}-+-{:-<16}-+-{:-<20}", "", "", "", "", "", "");
+    println!("{:-<5}-+-{:-<13}-+-{:-<10}-+-{:-<12}-+-{:-<20}", "", "", "", "", "");
 
     for (index, dev) in candidates.iter().enumerate() {
-        let proto_desc = match dev.protocol {
-            1 => "Keyboard",
-            2 => "Mouse",
-            0 => "None",
-            _ => "Other"
-        };
-        let proto_display = format!("{} ({})", dev.protocol, proto_desc);
-        let id_display = format!("{:04x}:{:04x}:{}", dev.vendor_id, dev.product_id, dev.interface_num);
-
+        let id_display = format!("{:04x}:{:04x}", dev.vendor_id, dev.product_id);
         println!(
-            "{:<5} | {:<13} | {:03}:{:03}    | {:<8} | {:<16} | {}",
+            "{:<5} | {:<13} | {:03}:{:03}    | {:<10} | {}",
             index,
             id_display,
             dev.bus,
             dev.address,
-            dev.interface_num,
-            proto_display,
+            dev.interfaces.len(),
             dev.product.as_deref().unwrap_or("Unknown")
         );
     }
 
-    print!("\n> select device index [0-{}]: ", candidates.len() - 1);
+    print!("\n> select a device index [e.g., 0]: ");
     io::stdout().flush().unwrap();
 
     setup::toggle_terminal_echo(true);
@@ -189,11 +200,11 @@ fn select_device_interactive(candidates: &[HIDevice]) -> Option<HIDevice> {
     let mut input = String::new();
     let selection = if io::stdin().read_line(&mut input).is_ok() {
         debug!(input = %input.trim(), "user input received");
-        input.trim().parse::<usize>().ok().and_then(|idx| {
-            let device = candidates.get(idx).cloned();
-            debug!(index = idx, "parsed selection");
-            device
-        })
+        input
+            .trim()
+            .parse::<usize>()
+            .ok()
+            .and_then(|idx| candidates.get(idx).cloned())
     } else {
         None
     };

@@ -1,20 +1,21 @@
 [package]
 name = "hid-proxy"
 version = "0.3.1"
-edition = "2024"
+edition = "2021"
 authors = ["Moritz Eigenauer <moritz.eigenauer+hid-proxy@gmail.com>"]
 license = "MIT"
 description = "Versatile USB HID middleman for the Raspberry Pi"
 repository = "https://github.com/EiSiMo/hid-proxy"
 
 [dependencies]
-rusb = "0.9"
+rusb = "0.9.4"
 udev = "0.9.3"
 rhai = { version = "1.23.6", features = ["sync"] }
 tokio = { version = "1.48.0", features = ["full"] }
 libc = "0.2.178"
 clap = { version = "4.5.53", features = ["derive"] }
-tracing = "0.1"
-tracing-subscriber = { version = "0.3", features = ["env-filter", "registry"] }
-tracing-journald = "0.3"
-is-terminal = "0.4"
+tracing = "0.1.43"
+tracing-subscriber = { version = "0.3.22", features = ["env-filter", "registry"] }
+tracing-journald = "0.3.2"
+is-terminal = "0.4.17"
+futures = "0.3.31"

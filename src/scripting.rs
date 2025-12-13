@@ -17,6 +17,7 @@ pub fn load_script_engine(script_path: Option<PathBuf>, shared_state: Arc<Shared
             Ok(ast) => {
                 debug!("script compiled successfully, creating scope");
                 let mut scope = Scope::new();
+                scope.push("device", shared_state.target_info.clone()); // Add device info to scope
                 if let Err(e) = engine.run_ast_with_scope(&mut scope, &ast) {
                     warn!("script initialization error: {}", e);
                     return None;

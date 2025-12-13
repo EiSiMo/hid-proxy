@@ -9,8 +9,8 @@ pub struct Args {
     #[arg(short, long, default_value = "default.rhai")]
     pub script: Option<String>,
 
-    /// Preselect device by ID (VID:PID) or ID+Interface (VID:PID:IFACE) in hex
-    /// Example: --target ffff:0035 or --target ffff:0035:1
+    /// Preselect a device by ID (VID:PID) or ID+Interface (VID:PID:IFACE) in hex
+    /// Example: --target ffff:0035
     #[arg(short, long)]
     pub target: Option<String>,
 

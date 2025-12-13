@@ -2,14 +2,21 @@
 // this script simply logs all traffic passing through the proxy.
 // use this to analyze your device protocol and see which bytes change when you press a button.
 
-let packet_count = 0;
-
 fn process(direction, data) {
-    packet_count += 1;
+    // format the device identifier string
+    let dev_id = `${device.vendor_id.to_hex(4)}:${device.product_id.to_hex(4)}:${device.interface_num}`;
+
+    let dir_str = if direction == "IN" { " IN" } else { "OUT" };
+
+    let len_str = if data.len() < 10 {
+        ` ${data.len()}`
+    } else {
+        `${data.len()}`
+    };
 
     // print the packet details to the console
-    // output format: [count] direction (length): [raw data bytes]
-    print(`[${packet_count}] ${direction} (${data.len()}b): ${data}`);
+    // output format: [vid]:[pid]:[interface] [direction] [data.len]b: [data]
+    print(`[${dev_id}] ${dir_str} ${len_str}b: ${data}`);
 
     // forward the data without modification
     send_to(direction, data);

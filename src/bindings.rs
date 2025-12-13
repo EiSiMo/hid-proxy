@@ -2,11 +2,23 @@ use std::sync::Arc;
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
 use rhai::{Engine, Dynamic};
 use rusb::{Direction, Recipient, RequestType};
+use crate::device::HIDevice;
 use crate::proxy::SharedState;
 use tracing::{debug, warn};
 use std::io::Write;
 
 pub fn register_native_fns(engine: &mut Engine, shared_state: Arc<SharedState>) {
+    engine.register_type_with_name::<HIDevice>("HIDevice")
+        .register_get("vendor_id", |dev: &mut HIDevice| dev.vendor_id as i64)
+        .register_get("product_id", |dev: &mut HIDevice| dev.product_id as i64)
+        .register_get("interface_num", |dev: &mut HIDevice| dev.interface_num as i64)
+        .register_get("protocol", |dev: &mut HIDevice| dev.protocol as i64)
+        .register_get("product_string", |dev: &mut HIDevice| dev.product.clone());
+
+    engine.register_fn("to_hex", |num: i64, len: i64| -> String {
+        format!("{:0width$x}", num, width = len as usize)
+    });
+
     engine.register_fn("get_timestamp_ms", get_timestamp_ms);
 
     let state_clone = shared_state.clone();
