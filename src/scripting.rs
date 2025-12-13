@@ -3,7 +3,7 @@ use std::path::PathBuf;
 use std::sync::{Arc, Mutex};
 use crate::bindings::{self, Interface};
 use crate::proxy::GlobalState;
-use tracing::{info, warn, debug};
+use tracing::{info, error, debug};
 
 pub type ScriptContext = Option<(Engine, AST, Mutex<Scope<'static>>)>;
 
@@ -25,15 +25,16 @@ pub fn load_script_engine(script_path: Option<PathBuf>, shared_state: Arc<Global
                 // Run the script once to initialize global variables (e.g. 'let VIRTUAL_MOUSE = ...')
                 debug!("initializing script globals");
                 if let Err(e) = engine.run_ast_with_scope(&mut scope, &ast) {
-                    warn!("error initializing script globals: {}", e);
+                    error!("error initializing script globals: {}", e);
+                    std::process::exit(1);
                 }
 
                 info!("script compiled and scope created.");
                 return Some((engine, ast, Mutex::new(scope)));
             }
             Err(e) => {
-                warn!("script compilation error: {}", e);
-                return None;
+                error!("script compilation error: {}", e);
+                std::process::exit(1);
             }
         }
     }
@@ -57,7 +58,7 @@ pub fn process_payload(
 
             if let Err(e) = result {
                 if !e.to_string().contains("Function not found") {
-                    warn!("error while executing rhai process() hook: {e}");
+                    error!("error while executing rhai process() hook: {e}");
                 }
             }
         }
@@ -70,7 +71,7 @@ pub fn tick(engine_opt: &Arc<ScriptContext>) {
             let result: Result<(), _> = engine.call_fn(&mut *scope, ast, "tick", ());
             if let Err(e) = result {
                 if !e.to_string().contains("Function not found") {
-                    warn!("error while executing rhai tick() hook: {e}");
+                    error!("error while executing rhai tick() hook: {e}");
                 }
             }
         }
