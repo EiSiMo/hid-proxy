@@ -68,26 +68,74 @@ This command displays the raw data coming from the HID device, which is useful f
 
 ## 📜 Scripting with [Rhai](https://github.com/rhaiscript/rhai)
 
-The core logic is handled by Rhai scripts found in the `examples/` directory. You can modify data on the fly without recompiling the binary.
+The core logic is handled by Rhai scripts. You can modify data on the fly without recompiling the binary.
 
-### The `process_data` Hook
+### Virtual Devices (Mice and Keyboards)
 
-Your script must implement the following function:
-]
+`hid-proxy` can create brand-new, independent USB devices that appear to the host computer as if they were physically plugged in. These are known as "virtual devices." You can create standard virtual mice and keyboards, allowing you to send mouse movements, clicks, and keystrokes to the host.
+
+This powerful feature enables advanced use cases:
+*   **Device Remapping:** Translate input from one device type to another. For example, make a joystick control the mouse cursor (see `joystick_to_mouse.rhai`).
+*   **Macro Pads:** Create a virtual keyboard to send complex shortcuts or sequences of keystrokes, triggered by a simpler physical device.
+*   **Input Generation:** Generate new input entirely from your script, without any physical device interaction.
+
+Virtual devices are typically created once when the script starts, inside the `init` hook.
+
+The scripting API provides three main hooks: `init`, `process`, and `tick`.
+
+### The `init()` Hook (Optional)
+
+This function is called once when the script is loaded. Its primary purpose is to perform one-time setup tasks, most importantly creating any **virtual devices** (`create_virtual_mouse()` or `create_virtual_keyboard()`) that your script needs.
+
 ```rhai
-// direction: "IN" (to host) or "OUT" (to device)
-// data: Array of bytes [u8]
+// Global scope so other functions can access it
+let virtual_mouse = ();
 
-fn process_data(direction, data) {
-    // Example: Log traffic
-    print(`[${direction}] Packet length: ${data.len()}`);
+fn init() {
+    // Create a virtual mouse and assign it to the global variable
+    virtual_mouse = create_virtual_mouse();
+    print("Initialized virtual mouse");
+}
+```
 
-    // Example: Manipulate data (e.g., swap a byte)
-    if direction == "IN" && data[0] == 0x01 {
-        data[1] = 0xFF;
+### The `process(interface, direction, data)` Hook
+
+This function is called for every HID report received from the physical device. Its primary role is to update the script's state based on incoming data. To keep the system responsive, this function should be fast and non-blocking.
+
+*   `interface`: An object representing the HID interface the report was received on. Use `interface.send_to(direction, data)` to forward reports.
+*   `direction`: `"IN"` (to host) or `"OUT"` (to device).
+*   `data`: An array of bytes (`[u8]`) containing the HID report.
+*   A global `device` object is also available, containing `vendor_id` and `product_id`.
+
+```rhai
+// Example: Capture joystick data but don't forward it
+fn process(interface, direction, data) {
+    // Check if the report is from our target joystick
+    if direction == "IN" && device.vendor_id == 0x045e {
+        // Update global state with joystick data
+        joystick_x = data[0];
+        joystick_y = data[1];
+        // Do not forward the original report, as we are replacing its functionality
+    } else if direction == "IN" {
+        // Forward reports from other devices
+        interface.send_to(direction, data);
     }
+}
+```
 
-    send_to(direction, data);
+### The `tick()` Hook (Optional)
+
+This function is called at a fixed interval (e.g., 100 times per second). It's designed for continuous actions that should happen independently of incoming HID reports, such as sending smooth, interpolated mouse movements to a virtual device.
+
+```rhai
+// Example: Translate joystick state into mouse movement
+fn tick() {
+    // Read global state and calculate mouse movement
+    let dx = ((joystick_x - 128) / 20.0).to_int();
+    let dy = ((joystick_y - 128) / 20.0).to_int();
+
+    // Send a report to the virtual mouse on every tick
+    virtual_mouse.send_report([0, dx, dy, 0]);
 }
 ```
 
