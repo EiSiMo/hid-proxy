@@ -46,7 +46,7 @@ impl fmt::Display for CompoundHIDevice {
             };
             writeln!(f, "  [{}] Interface {}, Protocol: {}", i, iface.interface_num, protocol_name)?;
         }
-        writeln!(f, "===================================================")
+        write!(f, "=================================================")
     }
 }
 
@@ -101,7 +101,7 @@ impl fmt::Display for HIDevice {
         writeln!(f, "Report Len:     {}", self.report_len)?;
         writeln!(f, "Endpoint IN:    0x{:02x}", self.endpoint_in)?;
         writeln!(f, "Endpoint OUT:   {}", self.endpoint_out.map(|e| format!("0x{:02x}", e)).unwrap_or_else(|| "None".to_string()))?;
-        writeln!(f, "=============================================")
+        write!(f, "=============================================")
     }
 }
 
