@@ -133,7 +133,7 @@ pub fn find_udc_controller() -> Result<String, Box<dyn std::error::Error>> {
     Err("no UDC controller found in /sys/class/udc".into())
 }
 
-pub fn cleanup_gadget_emergency() {
+pub fn cleanup_gadget_on_exit() {
     let base_path = "/sys/kernel/config/usb_gadget/hid_proxy";
     if Path::new(base_path).exists() {
         if let Ok(entries) = fs::read_dir(format!("{}/functions", base_path)) {
@@ -149,5 +149,5 @@ pub fn cleanup_gadget_emergency() {
         }
     }
     let _ = teardown_gadget(base_path);
-    warn!("emergency gadget cleanup executed");
+    info!("gadget cleanup executed");
 }

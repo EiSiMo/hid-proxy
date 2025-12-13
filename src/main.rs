@@ -46,7 +46,7 @@ async fn run_proxy() -> Result<(), Box<dyn std::error::Error>> {
         setup::toggle_terminal_echo(true);
         println!("\nCTRL+C detected, cleaning up");
         if gadget_created_clone.load(Ordering::SeqCst) {
-            gadget::cleanup_gadget_emergency();
+            gadget::cleanup_gadget_on_exit();
         }
         std::process::exit(0);
     });
