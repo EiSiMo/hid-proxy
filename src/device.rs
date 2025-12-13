@@ -82,6 +82,16 @@ pub struct HIDevice {
     pub report_descriptor: Vec<u8>,
 }
 
+impl HIDevice {
+    pub fn is_keyboard(&self) -> bool {
+        self.protocol == 1
+    }
+
+    pub fn is_mouse(&self) -> bool {
+        self.protocol == 2
+    }
+}
+
 impl fmt::Display for HIDevice {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         writeln!(f, "\n=== HID Device Info [Bus {:03} Address {:03}] ===", self.bus, self.address)?;

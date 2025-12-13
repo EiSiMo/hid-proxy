@@ -6,16 +6,21 @@ mod scripting;
 mod setup;
 mod bindings;
 mod logging;
+mod virtual_device;
 
 use clap::Parser;
-use crate::device::CompoundHIDevice;
+use crate::device::{CompoundHIDevice, HIDevice};
+use std::collections::HashMap;
+use std::fs::{OpenOptions};
 use std::io::{self, Write};
 use std::time::Duration;
 use std::path::PathBuf;
-use std::sync::Arc;
+use std::sync::{Arc, Mutex};
 use std::sync::atomic::{AtomicBool, Ordering};
-use tracing::{info, error, warn, debug};
 use futures::future::join_all;
+use rusb::{Context, DeviceHandle, UsbContext};
+use tracing::{info, error, warn, debug};
+use crate::proxy::GlobalState;
 
 #[tokio::main]
 async fn main() {
@@ -84,22 +89,76 @@ async fn run_proxy() -> Result<(), Box<dyn std::error::Error>> {
         info!("{}", device);
         debug!(device = ?device, "selected device for proxying");
 
-        if let Err(e) = gadget::create_gadget(&device) {
-            error!("failed to create USB gadget: {}", e);
-            tokio::time::sleep(Duration::from_secs(5)).await;
-            continue;
+        let handle = match setup_device_connection(device.interfaces.first().unwrap()) {
+            Ok(h) => h,
+            Err(e) => {
+                error!("failed to connect to device: {}", e);
+                continue;
+            }
+        };
+
+        // --- Scripting and Virtual Device Setup ---
+
+        let virtual_device_requests = Arc::new(Mutex::new(Vec::new()));
+
+        let global_state = Arc::new(GlobalState {
+            gadget_writers: Mutex::new(HashMap::new()),
+            virtual_device_requests: virtual_device_requests.clone(),
+            target_info: device.interfaces.first().unwrap().clone(),
+            num_physical_interfaces: device.interfaces.len(),
+            handle_output: handle.clone(),
+        });
+
+        let script_context = scripting::load_script_engine(script_path.clone(), global_state.clone());
+
+        if let Some((engine, ast, scope_mutex)) = &script_context {
+            let mut scope = scope_mutex.lock().unwrap();
+            if let Err(e) = engine.call_fn::<()>(&mut scope, &ast, "init", ()) {
+                if !e.to_string().contains("Function not found") {
+                    warn!("error during script init() execution: {}", e);
+                }
+            }
         }
+
+        let virtual_devices_to_create = virtual_device_requests.lock().unwrap().clone();
+        info!("requested {} virtual devices: {:?}", virtual_devices_to_create.len(), virtual_devices_to_create);
+
+        // --- Gadget Creation ---
+
+        let device_paths = match gadget::create_gadget(&device, &virtual_devices_to_create) {
+            Ok(paths) => paths,
+            Err(e) => {
+                error!("failed to create USB gadget: {}", e);
+                tokio::time::sleep(Duration::from_secs(5)).await;
+                continue;
+            }
+        };
         gadget_created.store(true, Ordering::SeqCst);
 
         gadget::wait_for_host_connection();
-        info!("beginning proxy loop for {} interfaces", device.interfaces.len());
 
+        // --- Final State and Proxy Loop ---
+
+        let mut gadget_writers = HashMap::new();
+        for (i, path) in device_paths.iter().enumerate() {
+            debug!(path = path, "opening gadget for writing");
+            let writer = OpenOptions::new().write(true).open(path)
+                .map_err(|e| format!("failed to open {} for writing: {}", path, e))?;
+            gadget_writers.insert(i, writer);
+        }
+
+        *global_state.gadget_writers.lock().unwrap() = gadget_writers;
+
+        info!("beginning proxy loop for {} physical interfaces", device.interfaces.len());
         let mut proxy_tasks = Vec::new();
+        let script_context_arc = Arc::new(script_context);
+
         for (i, interface) in device.interfaces.iter().enumerate() {
-            let script_path_clone = script_path.clone();
             let interface_clone = interface.clone();
+            let script_context_clone = script_context_arc.clone();
+            let global_state_clone = global_state.clone();
             let task = tokio::task::spawn_blocking(move || {
-                proxy::proxy_loop(interface_clone, script_path_clone, i)
+                proxy::proxy_loop(interface_clone, script_context_clone, i, global_state_clone)
             });
             proxy_tasks.push(task);
         }
@@ -119,6 +178,26 @@ async fn run_proxy() -> Result<(), Box<dyn std::error::Error>> {
         gadget_created.store(false, Ordering::SeqCst);
         tokio::time::sleep(Duration::from_secs(1)).await;
     }
+}
+
+fn setup_device_connection(target_info: &HIDevice) -> Result<Arc<DeviceHandle<Context>>, Box<dyn std::error::Error>> {
+    let context = Context::new()?;
+    let device = context.devices()?.iter()
+        .find(|d| d.bus_number() == target_info.bus && d.address() == target_info.address)
+        .ok_or("target device vanished before proxy loop")?;
+
+    info!("proxy loop opening device...");
+    let handle = device.open()?;
+    debug!("device opened successfully");
+
+    if handle.kernel_driver_active(target_info.interface_num).unwrap_or(false) {
+        debug!(iface = target_info.interface_num, "detaching kernel driver");
+        handle.detach_kernel_driver(target_info.interface_num)?;
+    }
+    handle.claim_interface(target_info.interface_num)?;
+    debug!(iface = target_info.interface_num, "claimed interface");
+
+    Ok(Arc::new(handle))
 }
 
 fn resolve_script_path(script_name: Option<&str>) -> Result<Option<PathBuf>, Box<dyn std::error::Error>> {

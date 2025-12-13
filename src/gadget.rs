@@ -1,4 +1,5 @@
 use crate::device::CompoundHIDevice;
+use crate::virtual_device::{VirtualDeviceType, KEYBOARD_REPORT_DESC, MOUSE_REPORT_DESC};
 use std::fs::{self};
 use std::io::{self, Write};
 use std::os::unix::fs::symlink;
@@ -30,13 +31,16 @@ pub fn wait_for_host_connection() {
     }
 }
 
-pub fn create_gadget(device: &CompoundHIDevice) -> Result<(), Box<dyn std::error::Error>> {
+pub fn create_gadget(
+    device: &CompoundHIDevice,
+    virtual_devices: &[VirtualDeviceType],
+) -> Result<Vec<String>, Box<dyn std::error::Error>> {
     let gadget_name = "hid_proxy";
     let base_path = format!("/sys/kernel/config/usb_gadget/{}", gadget_name);
 
     let _ = teardown_gadget(&base_path);
 
-    info!("configuring GadgetFS for {} interfaces", device.interfaces.len());
+    info!("configuring GadgetFS for {} physical and {} virtual interfaces", device.interfaces.len(), virtual_devices.len());
     fs::create_dir_all(&base_path)?;
     write_file(&base_path, "idVendor", &format!("0x{:04x}", device.vendor_id))?;
     write_file(&base_path, "idProduct", &format!("0x{:04x}", device.product_id))?;
@@ -59,6 +63,8 @@ pub fn create_gadget(device: &CompoundHIDevice) -> Result<(), Box<dyn std::error
     write_file(&config_strings, "configuration", "Config 1")?;
     write_file(&config_path, "MaxPower", "500")?;
 
+    let mut device_paths = Vec::new();
+
     for (i, interface) in device.interfaces.iter().enumerate() {
         let func_path = format!("{}/functions/hid.usb{}", base_path, i);
         fs::create_dir_all(&func_path)?;
@@ -72,13 +78,38 @@ pub fn create_gadget(device: &CompoundHIDevice) -> Result<(), Box<dyn std::error
             symlink(&func_path, &link_path)?;
         }
         debug!("created and linked function hid.usb{}", i);
+        device_paths.push(format!("/dev/hidg{}", i));
+    }
+
+    let physical_interface_count = device.interfaces.len();
+    for (i, v_device_type) in virtual_devices.iter().enumerate() {
+        let func_idx = physical_interface_count + i;
+        let func_path = format!("{}/functions/hid.usb{}", base_path, func_idx);
+        fs::create_dir_all(&func_path)?;
+
+        let (report_desc, report_len, protocol, subclass) = match v_device_type {
+            VirtualDeviceType::Keyboard => (KEYBOARD_REPORT_DESC, 8, 1, 1),
+            VirtualDeviceType::Mouse => (MOUSE_REPORT_DESC, 4, 2, 1),
+        };
+
+        write_file(&func_path, "protocol", &protocol.to_string())?;
+        write_file(&func_path, "subclass", &subclass.to_string())?;
+        write_file(&func_path, "report_length", &report_len.to_string())?;
+        fs::write(format!("{}/report_desc", func_path), report_desc)?;
+
+        let link_path = format!("{}/hid.usb{}", config_path, func_idx);
+        if !Path::new(&link_path).exists() {
+            symlink(&func_path, &link_path)?;
+        }
+        debug!("created and linked virtual function hid.usb{}", func_idx);
+        device_paths.push(format!("/dev/hidg{}", func_idx));
     }
 
     let udc_name = find_udc_controller()?;
     write_file(&base_path, "UDC", &udc_name)?;
 
     info!("gadget created and bound to UDC: {}", udc_name);
-    Ok(())
+    Ok(device_paths)
 }
 
 pub fn teardown_gadget(base_path: &str) -> io::Result<()> {
