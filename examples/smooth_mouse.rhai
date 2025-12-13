@@ -23,10 +23,11 @@ while i < SAMPLES {
     i += 1;
 }
 
-fn process(direction, data) {
-    // only process input data (direction "IN")
-    // data[0] == 2 checks if it is a mouse report (specific to this mouse model)
-    if direction == "IN" && data.len() >= 5 && data[0] == 2 {
+fn init() {}
+
+fn process(interface, direction, data) {
+    // only process input data (direction "IN") from a mouse
+    if direction == "IN" && interface.is_mouse() && data.len() >= 5 {
 
         // unpack the 12-bit x coordinate
         // combines the full 2nd byte and the lower half of the 3rd byte
@@ -85,5 +86,5 @@ fn process(direction, data) {
         data[4] = (pack_y >> 4) & 0xff;
     }
 
-    send_to(direction, data);
+    interface.send_to(direction, data);
 }

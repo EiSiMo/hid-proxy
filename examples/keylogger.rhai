@@ -5,10 +5,12 @@
 //
 // this was only tested on the "Logitech MX Keys S (GERMAN)" and your model might require tweaking the script
 
-fn process(direction, data) {
-    // only process input data (direction "IN")
+fn init() {}
+
+fn process(interface, direction, data) {
+    // only process input data (direction "IN") from a keyboard
     // check if the packet is long enough (standard keyboard report is usually 8 bytes)
-    if direction == "IN" && data.len() >= 8 {
+    if direction == "IN" && interface.is_keyboard() && data.len() >= 8 {
 
         let key_code = data[2]; // byte 2 contains the first pressed key
 
@@ -52,5 +54,5 @@ fn process(direction, data) {
     }
 
     // forward the data
-    send_to(direction, data);
+    interface.send_to(direction, data);
 }

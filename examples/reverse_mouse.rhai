@@ -4,10 +4,11 @@
 //
 // this was only tested on the "Amazon Basics Mouse" and your model might require tweaking the script
 
-fn process(direction, data) {
+fn init() {}
+
+fn process(interface, direction, data) {
     // only process input data from the mouse (direction "IN")
-    // check for report id 2 and sufficient data length
-    if direction == "IN" && data.len() >= 5 && data[0] == 2 {
+    if direction == "IN" && interface.is_mouse() && data.len() >= 5 {
 
         // unpack the 12-bit x coordinate
         // combines byte 2 and the lower half of byte 3
@@ -42,5 +43,5 @@ fn process(direction, data) {
         data[4] = (y >> 4) & 0xff;
     }
 
-    send_to(direction, data);
+    interface.send_to(direction, data);
 }

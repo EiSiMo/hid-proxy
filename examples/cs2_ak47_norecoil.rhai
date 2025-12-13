@@ -28,12 +28,14 @@ let pattern_y = [
 let scale_factor = 2.54;
 let compensation_ratio = scale_factor / sensitivity;
 
-fn process(direction, data) {
-    // always forward the original event first (e.g. the initial click)
-    send_to(direction, data);
+fn init() {}
 
-    // check for mouse input (direction "IN", report id 2)
-    if direction == "IN" && data.len() >= 5 && data[0] == 2 {
+fn process(interface, direction, data) {
+    // always forward the original event first (e.g. the initial click)
+    interface.send_to(direction, data);
+
+    // check for mouse input (direction "IN")
+    if direction == "IN" && interface.is_mouse() && data.len() >= 5 {
 
         // check if left mouse button is pressed (byte 1 is button state, 1 = left click)
         if data[1] == 1 {
@@ -70,7 +72,7 @@ fn process(direction, data) {
                     data[3] = x_high | (y_low << 4);
 
                     // send the compensation packet to the host
-                    send_to_host(data);
+                    interface.send_to(direction, data);
 
                     shot_count += 1;
                 }

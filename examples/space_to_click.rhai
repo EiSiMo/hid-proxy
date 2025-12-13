@@ -10,7 +10,6 @@ let was_space_pressed = false;
 
 fn init() {
     virtual_mouse = create_virtual_mouse();
-    print("virtual mouse created. press space to click!");
 }
 
 fn process(interface, direction, data) {

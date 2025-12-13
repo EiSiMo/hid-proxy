@@ -7,6 +7,7 @@ use tracing::{debug, warn};
 use std::io::Write;
 use std::time::Duration;
 use rusb::{Direction, Recipient, RequestType};
+use crate::device::HIDevice;
 
 #[derive(Clone)]
 pub enum InterfaceType {
@@ -122,6 +123,11 @@ pub fn register_native_fns(engine: &mut Engine, shared_state: Arc<GlobalState>) 
         .register_fn("is_mouse", Interface::is_mouse)
         .register_fn("is_physical", Interface::is_physical)
         .register_fn("is_virtual", Interface::is_virtual);
+
+    engine.register_type_with_name::<HIDevice>("HIDevice")
+        .register_get("vendor_id", |dev: &mut HIDevice| dev.vendor_id as i64)
+        .register_get("product_id", |dev: &mut HIDevice| dev.product_id as i64)
+        .register_get("interface_num", |dev: &mut HIDevice| dev.interface_num as i64);
 
     engine.register_fn("to_hex", |num: i64, len: i64| -> String {
         format!("{:0width$x}", num, width = len as usize)

@@ -8,10 +8,12 @@
 // it returns the current system time in milliseconds.
 let last_press_time = get_timestamp_ms();
 
-fn process(direction, data) {
+fn init() {}
+
+fn process(interface, direction, data) {
     // filter for input from the keyboard
     // data[2] == 44 checks if the spacebar (hid code 44) is currently pressed
-    if direction == "IN" && data[2] == 44 {
+    if direction == "IN" && interface.is_keyboard() && data.len() > 2 && data[2] == 44 {
 
         let current_time = get_timestamp_ms();
 
@@ -24,5 +26,5 @@ fn process(direction, data) {
         last_press_time = current_time;
     }
 
-    send_to(direction, data);
+    interface.send_to(direction, data);
 }
